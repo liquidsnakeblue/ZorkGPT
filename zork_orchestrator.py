@@ -23,6 +23,7 @@ from llm_client import LLMClientWrapper
 from map_graph import MapGraph
 from movement_analyzer import MovementAnalyzer, MovementContext
 from logger import setup_logging
+from location_action_database import LocationActionDatabase, create_location_action_context
 
 # Import our refactored modules with aliases to avoid conflicts
 from zork_agent import ZorkAgent as AgentModule
@@ -311,6 +312,17 @@ class ZorkOrchestrator:
                 context_parts.extend(location_discoveries)
                 context_parts.append("")
         
+        # Add location action database if available
+        if hasattr(self, 'location_action_db') and self.location_action_db:
+            db_context = create_location_action_context(
+                self.location_action_db,
+                current_location,
+                max_locations=15  # Limit to control token usage
+            )
+            if db_context:
+                context_parts.append(db_context)
+                context_parts.append("")
+        
         # Add location-specific failure information
         if current_location in self.failed_actions_by_location:
             location_failures = self.failed_actions_by_location[current_location]
@@ -424,6 +436,7 @@ class ZorkOrchestrator:
         self.memory_log_history = []
         self.visited_locations = set()
         self.failed_actions_by_location = {}
+        self.location_action_db = LocationActionDatabase()  # New compact database
         self.episode_id = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         self.previous_zork_score = 0
         self.turn_count = 0
@@ -1142,6 +1155,25 @@ class ZorkOrchestrator:
                     final_current_room_name = llm_extracted_info.current_location_name
                     source_of_location = "Enhanced LLM"
                     self.memory_log_history.append(llm_extracted_info)
+                    
+                    # Record action in location database
+                    if room_before_action and hasattr(self, 'location_action_db'):
+                        # Determine if this was a movement
+                        new_location = None
+                        if final_current_room_name != room_before_action:
+                            new_location = final_current_room_name
+                        
+                        # Get items found from extraction
+                        items_found = getattr(llm_extracted_info, 'visible_objects', [])
+                        
+                        # Record the action and outcome
+                        self.location_action_db.record_action(
+                            location=room_before_action,
+                            action=action_taken,
+                            outcome=clean_game_text,
+                            new_location=new_location,
+                            items_found=items_found if items_found else None
+                        )
 
                     # Log extraction
                     self.logger.info(

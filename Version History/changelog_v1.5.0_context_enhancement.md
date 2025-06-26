@@ -27,7 +27,7 @@ The ZorkGPT agent was performing poorly due to insufficient context:
 **File**: `zork_agent.py` (lines 308-324)
 - Implemented adaptive history window based on repetition count:
   - Default: 15 actions
-  - Moderate repetition (>5): 30 actions  
+  - Moderate repetition (>5): 30 actions
   - Severe repetition (>10): 45 actions
 - Automatically provides more context when agent is stuck
 
@@ -37,6 +37,14 @@ The ZorkGPT agent was performing poorly due to insufficient context:
 - Added cross-location discovery tracking (last 50 turns)
 - Shows items and exits found in each location
 - Provides comprehensive world state beyond current location
+
+### 4. Location-Action Database
+**Files**: `location_action_database.py` (new), `zork_orchestrator.py`
+- Compact database tracking ALL actions attempted at each location
+- Format: "Location: action=outcome" (e.g., "Forest: north→Kitchen; south=✗; read paper=Welcome to")
+- Prevents repetition of successful actions (like reading the same paper twice)
+- Uses minimal tokens with symbols: ✓=success, ✗=failed, →=moves to, ?=parser error
+- Tracks items found at each location
 
 ## Expected Improvements
 
