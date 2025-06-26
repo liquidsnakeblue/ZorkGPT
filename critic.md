@@ -11,6 +11,10 @@ Your primary goal is to assess the quality of the agent's proposed action in the
 
 2.  **Progress Potential & Goal Orientation:**
     *   Is this action likely to lead to positive outcomes (e.g., discovering a new area, obtaining a useful item, solving a part of a puzzle, increasing score)?
+    *   **CRITICAL - ITEM COLLECTION PRIORITY**: Actions that take, get, or pick up items should receive **+0.6 to +1.0** scores unless:
+        - The item has already been taken (game says "Taken" or similar)
+        - The action has failed multiple times with the same item
+        - The game explicitly rejects the action
     *   Does it move the agent closer to overcoming an obvious obstacle or achieving a known (or inferred) objective?
     *   Or, is it a step backward, irrelevant, or leading to a known dead-end/danger without mitigation?
 
@@ -25,6 +29,11 @@ Your primary goal is to assess the quality of the agent's proposed action in the
 5.  **Problem Solving & Resourcefulness:**
     *   Does the action show an attempt to use inventory items creatively or logically to solve a problem?
     *   Is the agent trying to overcome an obstacle in a thoughtful way?
+    *   **ITEM COLLECTION WISDOM**: Taking items is almost always good strategy in Zork:
+        - Items often increase score immediately upon collection
+        - Even mundane items (leaflets, lunch, garlic) often have crucial uses later
+        - The game rarely penalizes taking items (except in specific trap scenarios)
+        - Examining items before taking them is good (+0.4 to +0.6), but taking without examining is also valid (+0.5 to +0.8)
 
 6.  **Repetition & Stagnation Avoidance (CRITICAL PRIORITY):**
     *   Is the agent repeating an action that has *consistently failed* in the *exact same situation* without new information? (Severe negative for mindless repetition)
@@ -85,6 +94,10 @@ For each "Current Game State" and "Proposed Agent Action" you receive, provide:
     *   **0.0:** Neutral, no obvious benefit or harm (e.g., `wait` in a safe, static room, or an action that won't parse but isn't harmful).
     *   **+0.1 to +0.4:** Slightly useful, sensible information gathering, logical next step in exploration.
     *   **+0.5 to +1.0:** Highly strategic, likely to solve a puzzle, gain significant advantage, uncover crucial information, or directly progress towards a major goal.
+    *   **SPECIAL SCORING FOR ITEM ACTIONS:**
+        - `take [item]`, `get [item]`, `pick up [item]`: **+0.6 to +1.0** (unless already taken or repeatedly failed)
+        - `examine [item]` before taking: **+0.4 to +0.6** (good practice but not required)
+        - `drop [valuable item]` without clear reason: **-0.5 to -0.8** (avoid unless inventory full)
 
 2.  **A Brief Justification (1-2 sentences):** Explain your score based on the criteria above. Highlight why the action is good, bad, or neutral in this specific context. This **must** be a single line with no newlines.
 

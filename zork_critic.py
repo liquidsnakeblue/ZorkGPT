@@ -168,15 +168,19 @@ class ActionRejectionSystem:
         verb_diversity = len(unique_verbs) / len(actions)
         
         # Bonus for using different categories of actions
-        exploration_verbs = {"look", "examine", "search", "inspect", "take", "get", "read"}
+        # CRITICAL: Item collection verbs get their own high-priority category
+        item_collection_verbs = {"take", "get", "pick", "grab", "collect", "acquire"}
+        exploration_verbs = {"look", "examine", "search", "inspect", "read", "check"}
         interaction_verbs = {"open", "close", "push", "pull", "touch", "use", "move", "turn"}
         movement_verbs = {"go", "north", "south", "east", "west", "up", "down", "enter", "exit", "climb"}
         
         categories_used = set()
+        if any(verb in unique_verbs for verb in item_collection_verbs):
+            categories_used.add("item_collection")  # Highest priority category
         if any(verb in unique_verbs for verb in exploration_verbs):
             categories_used.add("exploration")
         if any(verb in unique_verbs for verb in interaction_verbs):
-            categories_used.add("interaction") 
+            categories_used.add("interaction")
         if any(verb in unique_verbs for verb in movement_verbs):
             categories_used.add("movement")
         

@@ -18,9 +18,11 @@ Before each action, apply this decision-making framework:
 
 **OBJECTIVE PRIORITIZATION SYSTEM**
 As you discover goals through gameplay, prioritize actions that:
+- **CRITICAL Priority**: Take/collect ANY items you encounter - items are almost always valuable for scoring or puzzle-solving
 - **High Priority**: Advance toward objectives that have shown score increases or clear progress
-- **Medium Priority**: Explore new areas that might contain important discoveries
-- **Low Priority**: Examine details that don't appear connected to major objectives
+- **High Priority**: Examine objects before taking them to understand their purpose
+- **Medium Priority**: Explore new areas that might contain important discoveries or items
+- **Low Priority**: Examine environmental details that don't appear to be collectible items
 - **Avoid**: Repetitive actions in areas that have shown no significant discoveries
 
 **GOAL RECOGNITION PATTERNS**
@@ -144,8 +146,13 @@ If the game responds with "I don't know the word" or "I don't understand that":
 
 **Gameplay Strategy & Mindset:**
 1.  **Observe Thoroughly:** Pay meticulous attention to every detail in the room descriptions and game responses. Nouns are often things you can interact with.
-2.  **Important Object Strategy:** Most objects you can pick up are important - either as treasures or as puzzle solutions. Don't ignore seemingly mundane items.
-3.  **Experiment Creatively:** If you're unsure what to do, try `examining` everything. Try `taking` objects. Try `using` items from your inventory on things in the room, or `using` items on other items in your inventory. Sometimes an unusual action is the key.
+2.  **CRITICAL - Item Collection Strategy:**
+    - **ALWAYS take items when you see them** - Most objects increase your score immediately upon collection
+    - **Examine first, then take** - Use `examine [object]` to learn about items, then `take [object]` to collect them
+    - **Check inventory regularly** - Use `inventory` to track what you're carrying
+    - **Even mundane items matter** - Items like leaflets, lamps, swords, keys, food, and containers often have crucial uses
+    - **If you see it, take it** - The game rarely penalizes you for picking things up
+3.  **Experiment Creatively:** If you're unsure what to do, prioritize `taking` any visible objects first. Then try `using` items from your inventory on things in the room, or `using` items on other items in your inventory. Sometimes an unusual action is the key.
 4.  **Explore Systematically:** Try to explore all available exits from a location. **Use your map**, you have a map that is generated as as mermaid diagram in the `## CURRENT WORLD MAP` section after a number of turns. You also have basic spatial information of the current room in the `--- Map Information ---` section.
 5.  **Solve Puzzles Methodically:** Zork is full of puzzles. Many have multiple solutions, and some can be bypassed entirely. Think about:
     *   What are the immediate obstacles or points of interest?
@@ -153,12 +160,18 @@ If the game responds with "I don't know the word" or "I don't understand that":
     *   Are there clues I've missed in previous descriptions or from `examining` objects?
     *   If a plan doesn't work, what did I learn? Try a variation or a different approach.
 6.  **CRUCIAL - Avoid Mindless Repetition:** If an action has FAILED or yielded NO NEW INFORMATION multiple times consecutively in the *exact same situation*, it is highly unlikely to work. *Change your approach*, try a different verb, interact with a different object, or explore elsewhere. **This is the #1 cause of poor performance.**
-7.  **Priority Order When Stuck:**
-    - **FIRST: Check "Available exits" in Map Information and try unexplored directions**
-    - **SECOND: Try basic movement commands (north, south, east, west) even if not explicitly listed**
-    - Third: Examine objects you haven't examined yet
-    - Fourth: Try simple interactions with objects (take, open, close)
-    - Fifth: Try using inventory items on room objects
+7.  **Priority Order When Entering a New Location:**
+    - **FIRST: Look for any objects mentioned in the room description**
+    - **SECOND: Take ALL visible objects (they almost always increase score or are needed later)**
+    - **THIRD: Examine interesting features that might hide more objects**
+    - **FOURTH: Check available exits for further exploration**
+8.  **Priority Order When Stuck:**
+    - **FIRST: Have you taken all visible objects in this location?**
+    - **SECOND: Check "Available exits" in Map Information and try unexplored directions**
+    - **THIRD: Try basic movement commands (north, south, east, west) even if not explicitly listed**
+    - Fourth: Examine objects you haven't examined yet (they might reveal hidden items)
+    - Fifth: Try simple interactions with objects (open containers, move furniture)
+    - Sixth: Try using inventory items on room objects
     - Last: Consider if this puzzle requires items or knowledge from elsewhere
 8.  **Utilize History:** You will be provided with a short history of your recent actions and the game's responses. Use this information to inform your next command, to track what you've tried, and to avoid immediate repetition of ineffective actions.
 9.  **Parser Fallback Strategy:** If a complex command fails with "I don't understand that":
