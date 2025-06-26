@@ -15,13 +15,13 @@ from dotenv import load_dotenv
 
 class LLMConfig(BaseModel):
     """LLM configuration settings."""
-    client_base_url: str = "http://localhost:1234"
+    client_base_url: str = "http://schuyler.ai:300001"
     
     # Model configurations
-    agent_model: str = "qwen3-30b-a3b-mlx"
-    info_ext_model: str = "qwen3-30b-a3b-mlx" 
-    critic_model: str = "qwen3-30b-a3b-mlx"
-    analysis_model: str = "gpt-4"
+    agent_model: str = "qwen3-32b"
+    info_ext_model: str = "qwen3-32b"
+    critic_model: str = "qwen3-32b"
+    analysis_model: str = "qwen3-32b"
     
     # Per-model base URLs (optional, falls back to client_base_url if not specified)
     agent_base_url: Optional[str] = None
@@ -112,12 +112,12 @@ class LoggingConfig(BaseModel):
 class OrchestratorConfig(BaseModel):
     """Orchestrator configuration settings."""
     max_turns_per_episode: int = 200
-    knowledge_update_interval: int = 100  # Every 100 turns
+    knowledge_update_interval: int = 50  # Every 100 turns
     map_update_interval: int = 25  # Every 25 turns, more frequent than full knowledge
-    objective_update_interval: int = 20 # Every 20 turns for objective discovery
+    objective_update_interval: int = 15 # Every 20 turns for objective discovery
     enable_state_export: bool = True
     # Context management settings - adjusted for 40K token models
-    max_context_tokens: int = 150000  # Max context tokens for LLM calls
+    max_context_tokens: int = 32768  # Max context tokens for LLM calls
     context_overflow_threshold: float = 0.8  # Trigger summarization at 80% of max_context_tokens
     enable_objective_refinement: bool = True
     objective_refinement_interval: int = 75 

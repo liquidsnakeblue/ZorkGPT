@@ -61,14 +61,16 @@ Zork often has unlisted exits. The `## CURRENT WORLD MAP` (Mermaid Diagram) in y
 4. **Interact:** Once confident about exits, examine objects and attempt puzzles.
 
 **LOOP DETECTION AND ESCAPE:**
-- **Signs of a loop:** Same location for 3+ turns, repetitive failed actions, no progress, declining critic scores.
+- **Signs of a loop:** Same location for 3+ turns WITH no new discoveries, repetitive failed actions, no progress, declining critic scores.
+- **CRITICAL**: If you just discovered something new (like revealing a grating), that's NOT a loop - explore it!
 - **Escape Protocol:**
     1. **STOP** current actions.
-    2. **CONSULT** the Mermaid Diagram for your current location.
-    3. **IDENTIFY** all possible exits from the diagram.
-    4. **PRIORITIZE** movement using diagram commands. Use exact commands from arrow labels.
-    5. If no diagram exits are promising, use the EXIT TESTING PROTOCOL.
-    6. **MOVEMENT IS KEY** when stuck.
+    2. **CHECK** - Did I just discover something new? If yes, EXPLORE IT FIRST.
+    3. **CONSULT** the Mermaid Diagram for your current location.
+    4. **IDENTIFY** all possible exits from the diagram.
+    5. **PRIORITIZE** newly revealed features over movement.
+    6. If no new discoveries and no diagram exits are promising, use the EXIT TESTING PROTOCOL.
+    7. **MOVEMENT IS KEY** only when truly stuck with nothing new to explore.
 
 **PARSER ERROR RECOVERY:**
 If the game responds with "I don't know the word" or "I don't understand that":
@@ -165,13 +167,19 @@ If the game responds with "I don't know the word" or "I don't understand that":
     - **SECOND: Take ALL visible objects (they almost always increase score or are needed later)**
     - **THIRD: Examine interesting features that might hide more objects**
     - **FOURTH: Check available exits for further exploration**
-8.  **Priority Order When Stuck:**
-    - **FIRST: Have you taken all visible objects in this location?**
-    - **SECOND: Check "Available exits" in Map Information and try unexplored directions**
-    - **THIRD: Try basic movement commands (north, south, east, west) even if not explicitly listed**
-    - Fourth: Examine objects you haven't examined yet (they might reveal hidden items)
-    - Fifth: Try simple interactions with objects (open containers, move furniture)
-    - Sixth: Try using inventory items on room objects
+8.  **Priority Order When Something New is Revealed:**
+    - **CRITICAL: When an action reveals something new (like "a grating is revealed"), ALWAYS explore it immediately!**
+    - **FIRST: Examine the newly revealed object/feature**
+    - **SECOND: Try interacting with it (open, enter, go down, etc.)**
+    - **THIRD: Only move to a new location if you've exhausted interactions with the discovery**
+9.  **Priority Order When Stuck:**
+    - **FIRST: Did my last action reveal something new? If yes, explore that first!**
+    - **SECOND: Have you taken all visible objects in this location?**
+    - **THIRD: Check "Available exits" in Map Information and try unexplored directions**
+    - **FOURTH: Try basic movement commands (north, south, east, west) even if not explicitly listed**
+    - Fifth: Examine objects you haven't examined yet (they might reveal hidden items)
+    - Sixth: Try simple interactions with objects (open containers, move furniture)
+    - Seventh: Try using inventory items on room objects
     - Last: Consider if this puzzle requires items or knowledge from elsewhere
 8.  **Utilize History:** You will be provided with a short history of your recent actions and the game's responses. Use this information to inform your next command, to track what you've tried, and to avoid immediate repetition of ineffective actions.
 9.  **Parser Fallback Strategy:** If a complex command fails with "I don't understand that":

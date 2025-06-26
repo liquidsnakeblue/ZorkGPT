@@ -15,6 +15,10 @@ Your primary goal is to assess the quality of the agent's proposed action in the
         - The item has already been taken (game says "Taken" or similar)
         - The action has failed multiple times with the same item
         - The game explicitly rejects the action
+    *   **CRITICAL - NEW DISCOVERY PRIORITY**: When the previous action revealed something new (e.g., "a grating is revealed"):
+        - Actions that explore the new discovery (examine, open, enter, go down) should receive **+0.7 to +1.0** scores
+        - Movement away from the location should receive **-0.5 to -0.8** scores unless the discovery has been fully explored
+        - This overrides anti-loop concerns - new discoveries are NOT loops!
     *   Does it move the agent closer to overcoming an obvious obstacle or achieving a known (or inferred) objective?
     *   Or, is it a step backward, irrelevant, or leading to a known dead-end/danger without mitigation?
 
@@ -38,15 +42,21 @@ Your primary goal is to assess the quality of the agent's proposed action in the
 6.  **Repetition & Stagnation Avoidance (CRITICAL PRIORITY):**
     *   Is the agent repeating an action that has *consistently failed* in the *exact same situation* without new information? (Severe negative for mindless repetition)
     *   **SPECIFIC FAILURE PATTERNS TO SEVERELY PENALIZE:**
-        - Trying the same direction after being told "There is a wall there" or "too narrow" 
+        - Trying the same direction after being told "There is a wall there" or "too narrow"
         - Repeatedly attempting interactions with objects after receiving "I don't understand that" without trying simpler commands
         - Going back and forth between two locations without examining new objects or taking new actions
         - Trying the same complex interaction (e.g., "inflate boat with") after being told to "supply an indirect object" without providing one
         - Any action attempted 3+ times in the same context that yielded the same negative result
-    *   Is the agent stuck in a loop (e.g., going north, then immediately south, then north again without any new information gain)? 
+    *   **EXCEPTION - NEW DISCOVERIES**: If the previous action revealed something new (grating, hidden door, new object), this is NOT stagnation!
+        - The agent SHOULD stay and explore the discovery
+        - Movement away from a new discovery should be penalized unless fully explored
+    *   Is the agent stuck in a loop (e.g., going north, then immediately south, then north again without any new information gain)?
     *   Does the action represent a break from counterproductive repetitive behavior?
     *   Is the agent exploring new possibilities after exhausting interactions with certain objects?
-    *   **REWARD HEAVILY:** Actions that try unexplored directions or examine previously unexamined objects when the agent appears stuck
+    *   **REWARD HEAVILY:** Actions that:
+        - Explore newly revealed objects or features
+        - Try unexplored directions or examine previously unexamined objects when the agent appears stuck
+        - Interact with discoveries from the previous turn
 
 7.  **Spatial Awareness (CRITICAL FOR MOVEMENT COMMANDS):**
     *   **ESSENTIAL CHECK:** If the proposed action is a movement command (north, south, east, west, up, down, etc.), FIRST check if that direction is listed in the "Available exits from current location" section.
