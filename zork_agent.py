@@ -195,8 +195,8 @@ The following strategic guide has been compiled from analyzing previous episodes
         if previous_actions_and_responses:
             memory_context = "Here's what you've done so far:\n"
 
-            # Add the most recent actions and responses (last 5-8 is usually sufficient)
-            for i, (action, response) in enumerate(previous_actions_and_responses[-8:]):
+            # Add the most recent actions and responses (extended to 15 for better context)
+            for i, (action, response) in enumerate(previous_actions_and_responses[-15:]):
                 memory_context += f"Command: {action}\nResult: {response.strip()}\n\n"
 
             # Include information about repetitive actions

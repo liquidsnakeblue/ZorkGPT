@@ -281,8 +281,8 @@ class MapGraph:
         """
         Get or create a node ID for a location, ensuring conceptual locations have stable IDs.
         
-        This method attempts to find a compatible existing node based on base name matching
-        and exit compatibility. If no compatible node exists, creates a new one.
+        This method attempts to find a compatible existing node based on base name matching,
+        exit compatibility, and description matching. If no compatible node exists, creates a new one.
         
         Args:
             base_location_name: The base name of the location (e.g., "Kitchen Of White House")
@@ -310,22 +310,46 @@ class MapGraph:
                     # Ensure non-directional exits are also lowercase for consistency
                     normalized_current_exits.add(clean_exit.lower())
         
-        # Attempt to find a compatible existing node
+        # Generate the ID that would be created for this location
+        # This ensures we check against the same ID format
+        potential_new_id = self._create_unique_location_id(base_location_name, description, exits=list(normalized_current_exits))
+        
+        # First, check if we already have this exact ID
+        if potential_new_id in self.rooms:
+            # Update exits if we discovered new ones
+            room_obj = self.rooms[potential_new_id]
+            if normalized_current_exits:
+                union_exits = room_obj.exits.union(normalized_current_exits)
+                room_obj.exits = union_exits
+            return potential_new_id
+        
+        # If not found by exact ID, check for compatible rooms with same base name
+        # This handles cases where we might have partial information
         for existing_node_id, room_obj in self.rooms.items():
             # Get the base name for this existing room
             existing_base_name = room_obj.base_name if hasattr(room_obj, 'base_name') and room_obj.base_name else self._extract_base_name(existing_node_id)
             
             # Check if base names match
             if normalized_base_name == existing_base_name:
+                # Extract the hash from both IDs if present
+                import re
+                existing_hash_match = re.search(r'#([a-f0-9]{6})$', existing_node_id)
+                new_hash_match = re.search(r'#([a-f0-9]{6})$', potential_new_id)
+                
+                # If both have hashes and they differ, these are different locations
+                if existing_hash_match and new_hash_match:
+                    if existing_hash_match.group(1) != new_hash_match.group(1):
+                        continue  # Different locations with same name
+                
                 # Perform compatibility check with exits
                 existing_exits = room_obj.exits
                 
                 # Check if the exits are compatible (either subset relationship or intersection)
                 # This allows for progressive discovery of exits in the same room
-                if (normalized_current_exits == existing_exits or 
+                if (normalized_current_exits == existing_exits or
                     existing_exits.issubset(normalized_current_exits) or
                     normalized_current_exits.issubset(existing_exits) or
-                    (normalized_current_exits and existing_exits and 
+                    (normalized_current_exits and existing_exits and
                      len(normalized_current_exits.intersection(existing_exits)) > 0)):
                     
                     # Update the room's exits to include all observed exits (union)
@@ -334,13 +358,14 @@ class MapGraph:
                     
                     return existing_node_id
         
-        # No compatible existing node found, generate a new node ID
-        new_node_id = self._create_unique_location_id(base_location_name, description, exits=list(normalized_current_exits))
+        # No compatible existing node found, create new room with the generated ID
+        self.add_room(potential_new_id, base_name=normalized_base_name)
         
-        # Create the new room with base_name stored
-        self.add_room(new_node_id, base_name=normalized_base_name)
+        # Set the initial exits for the new room
+        if potential_new_id in self.rooms and normalized_current_exits:
+            self.rooms[potential_new_id].exits = normalized_current_exits
         
-        return new_node_id
+        return potential_new_id
 
     def add_room(self, room_name: str, base_name: str = None) -> Room:
         # Use the room name as-is (it should already be a unique ID if needed)
@@ -961,20 +986,20 @@ class MapGraph:
 
     def _create_unique_location_id(self, location_name: str, description: str = "", objects: List[str] = None, exits: List[str] = None) -> str:
         """
-        Create a stable unique identifier for a location that handles cases where multiple 
+        Create a stable unique identifier for a location that handles cases where multiple
         locations have the same name but different characteristics.
         
-        This version prioritizes exit patterns over descriptions since exits are more stable
-        and less volatile than room descriptions which can change based on objects, lighting, etc.
+        This version uses both exit patterns AND description hashing to differentiate
+        locations with the same name but different descriptions (e.g., multiple "Clearing" locations).
         
         Args:
             location_name: The base location name (e.g., "Clearing")
-            description: Full location description text (used sparingly)
+            description: Full location description text (used for disambiguation)
             objects: List of visible objects in the location (mostly ignored)
             exits: List of available exits from the location (primary differentiator)
             
         Returns:
-            Stable location identifier based primarily on exit patterns
+            Stable location identifier based on exit patterns and description hash
         """
         if not location_name:
             return ""
@@ -983,6 +1008,7 @@ class MapGraph:
         
         # PRIMARY APPROACH: Use exit patterns as the main differentiator
         # Exits are much more stable than descriptions or objects
+        exit_suffix = ""
         if exits:
             # Normalize exits to canonical directions with consistent lowercase
             normalized_exits = set()
@@ -1005,59 +1031,82 @@ class MapGraph:
                 
                 # Single exit rooms (dead ends) - highly distinctive
                 if exit_count == 1:
-                    return f"{base_name} ({sorted_exits[0]} only)"
+                    exit_suffix = f"({sorted_exits[0]} only)"
                 
                 # Two-exit rooms (corridors) - very distinctive
                 elif exit_count == 2:
                     exit_pair = tuple(sorted_exits)
                     if exit_pair == ("east", "west"):
-                        return f"{base_name} (east-west corridor)"
+                        exit_suffix = "(east-west corridor)"
                     elif exit_pair == ("north", "south"):
-                        return f"{base_name} (north-south corridor)"
+                        exit_suffix = "(north-south corridor)"
                     elif exit_pair == ("down", "up"):
-                        return f"{base_name} (vertical passage)"
+                        exit_suffix = "(vertical passage)"
                     else:
                         # Other two-exit combinations
-                        return f"{base_name} ({'-'.join(sorted_exits)})"
+                        exit_suffix = f"({'-'.join(sorted_exits)})"
                 
                 # Three-exit rooms - moderately distinctive
                 elif exit_count == 3:
                     # Check for common three-way patterns
                     normalized_exits_set = set(sorted_exits)
                     if {"north", "east", "south"}.issubset(normalized_exits_set):
-                        return f"{base_name} (t-junction east)"
+                        exit_suffix = "(t-junction east)"
                     elif {"north", "west", "south"}.issubset(normalized_exits_set):
-                        return f"{base_name} (t-junction west)"
+                        exit_suffix = "(t-junction west)"
                     elif {"east", "west", "north"}.issubset(normalized_exits_set):
-                        return f"{base_name} (t-junction north)"
+                        exit_suffix = "(t-junction north)"
                     elif {"east", "west", "south"}.issubset(normalized_exits_set):
-                        return f"{base_name} (t-junction south)"
+                        exit_suffix = "(t-junction south)"
                     else:
                         # Other three-exit combinations - ensure consistent lowercase
-                        return f"{base_name} (3-way: {'-'.join(sorted_exits[:3])})"
+                        exit_suffix = f"(3-way: {'-'.join(sorted_exits[:3])})"
                 
                 # Four or more exits - use count-based identifier
                 elif exit_count >= 4:
                     if exit_count == 4 and {"north", "south", "east", "west"}.issubset(normalized_exits):
-                        return f"{base_name} (4-way intersection)"
+                        exit_suffix = "(4-way intersection)"
                     else:
-                        return f"{base_name} ({exit_count}-way junction)"
+                        exit_suffix = f"({exit_count}-way junction)"
         
-        # SECONDARY APPROACH: Only use descriptions for truly permanent, structural features
-        # Avoid volatile content like objects, lighting, or temporary states
-        # REMOVED: All hardcoded location-specific strings to maintain LLM-First Design
-        # The LLM extractor should handle location identification, not hardcoded rules
+        # SECONDARY APPROACH: Use description hash for disambiguation when needed
+        # This helps differentiate locations with the same name but different descriptions
+        if description and description.strip():
+            # Extract key permanent features from description, avoiding volatile content
+            import hashlib
+            
+            # Clean the description to focus on permanent features
+            cleaned_desc = description.lower().strip()
+            
+            # Remove common volatile phrases that change frequently
+            volatile_phrases = [
+                "you can see", "there is", "there are", "you see", "you notice",
+                "lying here", "sitting here", "on the ground", "has been dropped here",
+                "dimly lit", "brightly lit", "dark", "bright",
+                "open", "closed", "ajar",
+                "your score", "moves:", "turns:"
+            ]
+            
+            for phrase in volatile_phrases:
+                cleaned_desc = cleaned_desc.replace(phrase, "")
+            
+            # Create a short hash of the cleaned description
+            if cleaned_desc and len(cleaned_desc) > 20:  # Only hash substantial descriptions
+                desc_hash = hashlib.md5(cleaned_desc.encode()).hexdigest()[:6]
+                
+                # Combine base name with exit suffix and description hash
+                if exit_suffix:
+                    return f"{base_name} {exit_suffix} #{desc_hash}"
+                else:
+                    return f"{base_name} #{desc_hash}"
         
-        # AVOID: Volatile features that change frequently
-        # - Objects that can be picked up/dropped
-        # - Lighting conditions ("dimly lit", "dark")
-        # - Temporary states ("open door", "closed window")
-        # - Minor object detection variations
-        # - Hardcoded location names that won't help with unseen areas
+        # If we have an exit suffix but no description, use it
+        if exit_suffix:
+            return f"{base_name} {exit_suffix}"
         
         # Default: return the base name without modification
         # This ensures the same room gets the same ID unless there are
-        # truly distinctive permanent features discovered through exit patterns
+        # truly distinctive permanent features discovered
         return base_name
 
     def needs_consolidation(self) -> bool:

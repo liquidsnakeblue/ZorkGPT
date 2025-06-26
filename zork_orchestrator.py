@@ -43,6 +43,14 @@ except ImportError:
 # Import shared utilities
 from shared_utils import estimate_context_tokens
 
+# Failure classification constants
+FAILURE_TYPES = {
+    "PERMANENT": ["wall", "too narrow", "no exit", "can't go that way", "there is no way to go"],
+    "MISSING_ITEM": ["locked", "need key", "requires", "can't open"],
+    "PARSER": ["don't understand", "don't know", "what do you want", "i can't see"],
+    "TEMPORARY": ["nothing happens", "already open", "already closed", "it is already"]
+}
+
 
 class ZorkOrchestrator:
     """
@@ -215,6 +223,152 @@ class ZorkOrchestrator:
         # Episode state (reset for each episode)
         self.reset_episode_state()
 
+    def classify_failure_type(self, response: str) -> str:
+        """Classify the type of failure based on the response text."""
+        response_lower = response.lower()
+        
+        for failure_type, patterns in FAILURE_TYPES.items():
+            for pattern in patterns:
+                if pattern in response_lower:
+                    return failure_type
+        
+        return "UNKNOWN"
+    
+    def track_location_failure(self, location: str, action: str, response: str, turn: int) -> None:
+        """Track failed actions by location with failure classification."""
+        if location not in self.failed_actions_by_location:
+            self.failed_actions_by_location[location] = {}
+        
+        failure_type = self.classify_failure_type(response)
+        
+        if action not in self.failed_actions_by_location[location]:
+            self.failed_actions_by_location[location][action] = {
+                "count": 0,
+                "responses": [],
+                "failure_type": failure_type,
+                "first_turn": turn,
+                "last_turn": turn
+            }
+        
+        failure_info = self.failed_actions_by_location[location][action]
+        failure_info["count"] += 1
+        failure_info["last_turn"] = turn
+        failure_info["responses"].append(response[:100])  # Store first 100 chars
+        
+        # Update failure type if it changes (e.g., from PARSER to MISSING_ITEM)
+        if failure_type != "UNKNOWN" and failure_info["failure_type"] == "UNKNOWN":
+            failure_info["failure_type"] = failure_type
+
+    def generate_extended_context(self, current_location: str) -> str:
+        """Generate a summary of important past events beyond the action history window."""
+        context_parts = []
+        
+        # Add location-specific failure information
+        if current_location in self.failed_actions_by_location:
+            location_failures = self.failed_actions_by_location[current_location]
+            
+            # Categorize failures by type
+            permanent_failures = []
+            item_failures = []
+            other_failures = []
+            
+            for action, info in location_failures.items():
+                if info["count"] >= 2:  # Only include actions tried multiple times
+                    failure_entry = f"- {action}: {info['failure_type']} (tried {info['count']} times)"
+                    
+                    if info["failure_type"] == "PERMANENT":
+                        permanent_failures.append(failure_entry)
+                    elif info["failure_type"] == "MISSING_ITEM":
+                        item_failures.append(failure_entry)
+                    else:
+                        other_failures.append(failure_entry)
+            
+            if permanent_failures:
+                context_parts.append("PERMANENT BARRIERS FROM THIS LOCATION:")
+                context_parts.extend(permanent_failures)
+                context_parts.append("")
+            
+            if item_failures:
+                context_parts.append("ACTIONS REQUIRING ITEMS:")
+                context_parts.extend(item_failures)
+                context_parts.append("")
+            
+            if other_failures:
+                context_parts.append("OTHER FAILED ACTIONS HERE:")
+                context_parts.extend(other_failures)
+                context_parts.append("")
+        
+        # Add successful paths from current location
+        if hasattr(self, 'game_map') and self.game_map.rooms:
+            normalized_location = current_location.lower() if current_location else ""
+            if normalized_location in self.game_map.rooms:
+                room = self.game_map.rooms[normalized_location]
+                successful_paths = []
+                
+                # Check connections from this room
+                if normalized_location in self.game_map.connections:
+                    for direction, connected_room in self.game_map.connections[normalized_location].items():
+                        # Check confidence for this connection
+                        confidence_key = (normalized_location, direction)
+                        confidence = self.game_map.connection_confidence.get(confidence_key, 1.0)
+                        
+                        if confidence >= 0.8:  # High confidence connections
+                            successful_paths.append(f"- {direction}: leads to {connected_room}")
+                
+                if successful_paths:
+                    context_parts.append("CONFIRMED PATHS FROM HERE:")
+                    context_parts.extend(successful_paths)
+                    context_parts.append("")
+        
+        # Add global action warnings for highly repeated actions
+        highly_repeated = [
+            f"- {action} (attempted {count} times total)"
+            for action, count in self.action_counts.items()
+            if count > 5
+        ]
+        
+        if highly_repeated:
+            context_parts.append("GLOBALLY OVERUSED ACTIONS:")
+            context_parts.extend(highly_repeated)
+            context_parts.append("⚠️ These actions have been tried many times - avoid unless conditions have significantly changed!")
+        
+        return "\n".join(context_parts) if context_parts else ""
+    
+    def update_objective_feasibility(self, objective: str, location: str, action: str, failure_type: str) -> None:
+        """Update the feasibility status of an objective based on failed actions."""
+        if objective not in self.objective_feasibility:
+            self.objective_feasibility[objective] = {
+                "status": "active",
+                "blocked_by": [],
+                "retry_conditions": []
+            }
+        
+        # Check if this failure indicates the objective is blocked
+        if failure_type == "PERMANENT":
+            self.objective_feasibility[objective]["status"] = "impossible"
+            self.objective_feasibility[objective]["blocked_by"].append(f"{action} at {location}: permanent barrier")
+        elif failure_type == "MISSING_ITEM":
+            self.objective_feasibility[objective]["status"] = "blocked"
+            self.objective_feasibility[objective]["blocked_by"].append(f"{action} at {location}: missing required item")
+            self.objective_feasibility[objective]["retry_conditions"].append("find_required_item")
+    
+    def get_feasible_objectives(self) -> List[str]:
+        """Return only objectives that are currently feasible to pursue."""
+        feasible = []
+        for obj in self.discovered_objectives:
+            if obj not in self.objective_feasibility:
+                # No known blockers
+                feasible.append(obj)
+            elif self.objective_feasibility[obj]["status"] == "active":
+                feasible.append(obj)
+            elif self.objective_feasibility[obj]["status"] == "blocked":
+                # Check if retry conditions might be met (e.g., new items in inventory)
+                if "find_required_item" in self.objective_feasibility[obj]["retry_conditions"]:
+                    # This is a simple check - could be enhanced to track inventory changes
+                    feasible.append(obj + " [requires item]")
+        
+        return feasible
+
     def reset_episode_state(self) -> None:
         """Reset all episode-specific state variables."""
         self.action_counts = Counter()
@@ -229,6 +383,7 @@ class ZorkOrchestrator:
         # Use MapGraph with enhanced confidence tracking
         self.game_map = MapGraph()
         self.current_room_name_for_map = ""
+        self.current_location_unique_id = ""  # Store the unique ID with description hash
         self.prev_room_for_prompt_context: Optional[str] = None
         self.action_leading_to_current_room_for_prompt_context: Optional[str] = None
         self.current_inventory = []
@@ -247,6 +402,9 @@ class ZorkOrchestrator:
         self.objective_staleness_tracker = {}  # Track turns since progress on each objective
         self.last_location_for_staleness = None
         self.last_score_for_staleness = 0
+        
+        # Objective feasibility tracking
+        self.objective_feasibility = {}  # Track status and conditions for each objective
 
         # Reset adaptive knowledge tracking for new episode
         self.last_knowledge_update_turn = 0
@@ -359,6 +517,13 @@ class ZorkOrchestrator:
         if extracted_info:
             # Initialize room tracking
             self.current_room_name_for_map = extracted_info.current_location_name
+            # Create initial unique ID with available information
+            self.current_location_unique_id = self.game_map._create_unique_location_id(
+                extracted_info.current_location_name,
+                description=' '.join(extracted_info.important_messages) if extracted_info.important_messages else '',
+                objects=extracted_info.visible_objects if extracted_info.visible_objects else [],
+                exits=extracted_info.exits if extracted_info.exits else []
+            )
             self.prev_room_for_prompt_context = None
             self.action_leading_to_current_room_for_prompt_context = None
 
@@ -383,6 +548,7 @@ class ZorkOrchestrator:
             )
         else:
             self.current_room_name_for_map = "Unknown (Initial Extraction Failed)"
+            self.current_location_unique_id = self.current_room_name_for_map
             self.game_map.add_room(self.current_room_name_for_map)
 
         # Export initial state
@@ -519,17 +685,50 @@ class ZorkOrchestrator:
 
             # Add discovered objectives to the context if any exist
             if self.discovered_objectives:
+                # Get only feasible objectives
+                feasible_objectives = self.get_feasible_objectives()
+                
                 objectives_text = "\n--- Current Discovered Objectives ---\n"
                 objectives_text += "🎯 Based on your recent gameplay patterns, you have discovered these objectives:\n"
-                for i, obj in enumerate(self.discovered_objectives, 1):
-                    objectives_text += f"  {i}. {obj}\n"
-                objectives_text += "\n⚠️ FOCUS ON THESE OBJECTIVES when choosing your next action. Prioritize actions that advance these discovered goals rather than aimless exploration.\n"
+                
+                # Show feasible objectives
+                if feasible_objectives:
+                    objectives_text += "\nACHIEVABLE NOW:\n"
+                    for i, obj in enumerate(feasible_objectives, 1):
+                        objectives_text += f"  {i}. {obj}\n"
+                
+                # Show blocked objectives
+                blocked_objectives = []
+                for obj in self.discovered_objectives:
+                    if obj in self.objective_feasibility:
+                        status = self.objective_feasibility[obj]["status"]
+                        if status == "blocked":
+                            blocked_objectives.append(f"{obj} (blocked - needs item)")
+                        elif status == "impossible":
+                            blocked_objectives.append(f"{obj} (impossible - permanent barrier)")
+                
+                if blocked_objectives:
+                    objectives_text += "\nBLOCKED/IMPOSSIBLE:\n"
+                    for obj in blocked_objectives:
+                        objectives_text += f"  - {obj}\n"
+                
+                objectives_text += "\n⚠️ FOCUS ON ACHIEVABLE OBJECTIVES when choosing your next action. Avoid pursuing blocked or impossible goals.\n"
                 
                 # Append to relevant memories
                 if relevant_memories:
                     relevant_memories += objectives_text
                 else:
                     relevant_memories = objectives_text.strip()
+
+            # Generate extended context for better decision making
+            extended_context = self.generate_extended_context(self.current_room_name_for_map)
+            
+            # Combine relevant memories with extended context
+            if extended_context:
+                if relevant_memories:
+                    relevant_memories = f"{relevant_memories}\n\n--- LOCATION-SPECIFIC HISTORY ---\n{extended_context}"
+                else:
+                    relevant_memories = f"--- LOCATION-SPECIFIC HISTORY ---\n{extended_context}"
 
             # Get agent action with reasoning
             agent_response = self.agent.get_action_with_reasoning(
@@ -739,6 +938,7 @@ class ZorkOrchestrator:
 
             # Send the chosen action to Zork
             room_before_action = self.current_room_name_for_map
+            room_before_action_unique_id = self.current_location_unique_id  # Store the unique ID
             action_taken = agent_action
 
             try:
@@ -853,6 +1053,23 @@ class ZorkOrchestrator:
                 # Store clean game text in action history (without structured header)
                 self.action_history.append((action_taken, clean_game_text))
 
+                # Track location-specific failures
+                if self.current_room_name_for_map:
+                    # Check if this action appears to be a failure based on response patterns
+                    response_lower = clean_game_text.lower()
+                    failure_indicators = [
+                        "wall", "can't", "don't", "no way", "too narrow", "locked",
+                        "nothing happens", "already", "what", "i can't see", "not here"
+                    ]
+                    
+                    if any(indicator in response_lower for indicator in failure_indicators):
+                        self.track_location_failure(
+                            self.current_room_name_for_map,
+                            action_taken,
+                            clean_game_text,
+                            self.turn_count
+                        )
+
                 # Extract information using the extractor
                 llm_extracted_info = self.extractor.extract_info(
                     next_game_state, room_before_action
@@ -926,13 +1143,18 @@ class ZorkOrchestrator:
                     movement_context
                 )
                 if movement_result.connection_created:
-                    # Use the improved unique ID system for both locations to ensure consistency
-                    from_location_id = self.game_map._create_unique_location_id(
-                        movement_result.from_location,
-                        description='',  # No description available for previous location
-                        objects=[],
-                        exits=[]  # Exit info not available for previous location
-                    )
+                    # Use the stored unique ID for the previous location if available
+                    # This ensures we maintain the correct unique ID including description hash
+                    if room_before_action_unique_id:
+                        from_location_id = room_before_action_unique_id
+                    else:
+                        # Fallback: create ID without description (less accurate)
+                        from_location_id = self.game_map._create_unique_location_id(
+                            movement_result.from_location,
+                            description='',  # No description available for previous location
+                            objects=[],
+                            exits=[]  # Exit info not available for previous location
+                        )
                     to_location_id = current_location_id  # Already computed above
                     
                     # Add connection to map with unique identifiers
@@ -1075,8 +1297,9 @@ class ZorkOrchestrator:
 
             current_game_state = next_game_state
 
-            # Update current room name for next iteration
-            self.current_room_name_for_map = current_location_id
+            # Update current room name and unique ID for next iteration
+            self.current_room_name_for_map = final_current_room_name
+            self.current_location_unique_id = current_location_id
 
             # Reset critic rejection system for next turn
             self.critic.rejection_system.reset_turn()
@@ -1687,7 +1910,7 @@ class ZorkOrchestrator:
         if from_room and from_room == to_room:
             # Action didn't result in movement, might be a failed action
             if from_room not in self.failed_actions_by_location:
-                self.failed_actions_by_location[from_room] = set()
+                self.failed_actions_by_location[from_room] = {}
 
             # Only add to failed actions if it looks like a movement command that failed
             movement_keywords = [
@@ -1703,7 +1926,17 @@ class ZorkOrchestrator:
                 "climb",
             ]
             if any(keyword in action.lower() for keyword in movement_keywords):
-                self.failed_actions_by_location[from_room].add(action)
+                # Use the new dictionary-based tracking structure
+                if action not in self.failed_actions_by_location[from_room]:
+                    self.failed_actions_by_location[from_room][action] = {
+                        "count": 0,
+                        "responses": [],
+                        "failure_type": "PERMANENT",  # Movement failures are typically walls
+                        "first_turn": self.turn_count,
+                        "last_turn": self.turn_count
+                    }
+                self.failed_actions_by_location[from_room][action]["count"] += 1
+                self.failed_actions_by_location[from_room][action]["last_turn"] = self.turn_count
                 
                 # NEW: Track the failed exit in the map for potential pruning
                 if config.gameplay.enable_exit_pruning and self.game_map:
@@ -1748,10 +1981,21 @@ class ZorkOrchestrator:
         if failure_detection.action_failed:
             # Initialize location tracking if needed
             if current_location not in self.failed_actions_by_location:
-                self.failed_actions_by_location[current_location] = set()
+                self.failed_actions_by_location[current_location] = {}
             
-            # Add the failed action to this location's set
-            self.failed_actions_by_location[current_location].add(action.lower())
+            # Add the failed action to this location's dictionary
+            action_lower = action.lower()
+            if action_lower not in self.failed_actions_by_location[current_location]:
+                self.failed_actions_by_location[current_location][action_lower] = {
+                    "count": 0,
+                    "responses": [],
+                    "failure_type": self.classify_failure_type(game_response),
+                    "first_turn": self.turn_count,
+                    "last_turn": self.turn_count
+                }
+            self.failed_actions_by_location[current_location][action_lower]["count"] += 1
+            self.failed_actions_by_location[current_location][action_lower]["last_turn"] = self.turn_count
+            self.failed_actions_by_location[current_location][action_lower]["responses"].append(game_response[:100])
             
             # Log the failure detection
             self.logger.info(
