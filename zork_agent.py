@@ -308,8 +308,18 @@ The following strategic guide has been compiled from analyzing previous episodes
         if previous_actions_and_responses:
             memory_context = "Here's what you've done so far:\n"
 
-            # Add the most recent actions and responses (last 5-8 is usually sufficient)
-            for i, (action, response) in enumerate(previous_actions_and_responses[-8:]):
+            # Determine how much history to include based on repetition patterns
+            context_window = 15  # Default
+            if action_counts and action_counts:
+                max_repetitions = max(action_counts.values())
+                if max_repetitions > 10:
+                    context_window = 45  # Much more context when severely stuck
+                elif max_repetitions > 5:
+                    context_window = 30  # More context when moderately stuck
+            
+            # Add the most recent actions and responses with dynamic window
+            history_slice = previous_actions_and_responses[-context_window:]
+            for i, (action, response) in enumerate(history_slice):
                 memory_context += f"Command: {action}\nResult: {response.strip()}\n\n"
 
             # Include information about repetitive actions
@@ -601,16 +611,29 @@ The following strategic guide has been compiled from analyzing previous episodes
                     f"- FAILED ACTIONS in {current_location_name_from_current_extraction}: The following actions have already failed here and should NOT be repeated: {', '.join(sorted(failed_actions))}."
                 )
 
-        previous_observations_of_current_room = [
-            obs
-            for obs in reversed(memory_log_history[:-1])  # Exclude current observation
-            if obs.current_location_name
-            == current_location_name_from_current_extraction
-        ]
+        previous_observations_of_current_room = []
+        for obs in reversed(memory_log_history[:-1]):  # Exclude current observation
+            # Handle both object attributes and dictionary access
+            if hasattr(obs, 'current_location_name'):
+                location_name = obs.current_location_name
+            elif isinstance(obs, dict) and 'current_location_name' in obs:
+                location_name = obs['current_location_name']
+            else:
+                continue  # Skip entries without location information
+                
+            if location_name == current_location_name_from_current_extraction:
+                previous_observations_of_current_room.append(obs)
 
         if previous_observations_of_current_room:
             last_relevant_obs = previous_observations_of_current_room[0]
-            prev_objects = last_relevant_obs.visible_objects
+            # Handle both object attributes and dictionary access for visible_objects
+            if hasattr(last_relevant_obs, 'visible_objects'):
+                prev_objects = last_relevant_obs.visible_objects
+            elif isinstance(last_relevant_obs, dict) and 'visible_objects' in last_relevant_obs:
+                prev_objects = last_relevant_obs['visible_objects']
+            else:
+                prev_objects = None
+                
             if prev_objects:
                 other_memory_strings.append(
                     f"- Previously noted objects in {current_location_name_from_current_extraction}: {', '.join(prev_objects)}."

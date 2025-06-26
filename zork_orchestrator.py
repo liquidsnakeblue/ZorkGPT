@@ -263,6 +263,54 @@ class ZorkOrchestrator:
         """Generate a summary of important past events beyond the action history window."""
         context_parts = []
         
+        # Add map visualization if available
+        if hasattr(self, 'game_map') and self.game_map:
+            map_diagram = self.game_map.render_mermaid()
+            if map_diagram:
+                context_parts.append("## CURRENT WORLD MAP")
+                context_parts.append("```mermaid")
+                context_parts.append(map_diagram)
+                context_parts.append("```")
+                context_parts.append("")
+        
+        # Add recent discoveries across all locations
+        if hasattr(self, 'memory_log_history') and self.memory_log_history:
+            location_discoveries = []
+            seen_locations = {}
+            
+            # Scan through history to collect discoveries
+            for memory in self.memory_log_history[-50:]:  # Last 50 turns for broader context
+                loc_name = getattr(memory, 'current_location_name', None)
+                if loc_name:
+                    if loc_name not in seen_locations:
+                        seen_locations[loc_name] = {
+                            'items': set(),
+                            'exits': set(),
+                            'features': set()
+                        }
+                    
+                    # Collect items
+                    items = getattr(memory, 'visible_objects', [])
+                    if items:
+                        seen_locations[loc_name]['items'].update(items)
+                    
+                    # Collect exits
+                    exits = getattr(memory, 'exits', [])
+                    if exits:
+                        seen_locations[loc_name]['exits'].update(exits)
+            
+            # Format discoveries
+            for loc, data in seen_locations.items():
+                if data['items']:
+                    location_discoveries.append(f"- {loc}: Items found: {', '.join(sorted(data['items']))}")
+                if data['exits'] and loc != current_location:  # Don't repeat current location exits
+                    location_discoveries.append(f"  Exits: {', '.join(sorted(data['exits']))}")
+            
+            if location_discoveries:
+                context_parts.append("DISCOVERIES ACROSS LOCATIONS:")
+                context_parts.extend(location_discoveries)
+                context_parts.append("")
+        
         # Add location-specific failure information
         if current_location in self.failed_actions_by_location:
             location_failures = self.failed_actions_by_location[current_location]
@@ -734,8 +782,8 @@ class ZorkOrchestrator:
             agent_response = self.agent.get_action_with_reasoning(
                 game_state_text=current_game_state,
                 previous_actions_and_responses=self.action_history[
-                    -5:
-                ],  # Last 5 actions
+                    -50:
+                ],  # Last 50 actions - increased from 5 for better context
                 action_counts=self.action_counts,
                 relevant_memories=relevant_memories,
             )
@@ -2459,7 +2507,7 @@ RECENT GAMEPLAY DATA:
 {json.dumps(serializable_turns, indent=2)}
 
 CURRENT MAP STATE:
-{self.game_map.generate_mermaid_diagram()}
+{self.game_map.render_mermaid()}
 
 Please provide a summary that includes:
 1. Major discoveries and progress made
@@ -2481,7 +2529,7 @@ Format as a clear, structured summary that preserves essential information for c
                 **self.adaptive_knowledge_manager.analysis_sampling.model_dump(exclude_unset=True)
             )
             
-            return response.content.strip()
+            return response.choices[0].message.content.strip() if response.choices else ""
             
         except Exception as e:
             self.logger.error(f"Failed to generate LLM summary, using fallback: {e}", extra={"episode_id": self.episode_id})
@@ -2757,13 +2805,17 @@ Focus on objectives the agent has actually discovered through gameplay patterns 
                     )
                     
                     print(f"  🔍 LLM call successful, response type: {type(response)}")
-                    print(f"  🔍 Response content type: {type(response.content)}")
-                    print(f"  🔍 Response content length: {len(response.content) if response.content else 0}")
+                    
+                    # Extract content from OpenAI response structure
+                    response_content = response.choices[0].message.content if response.choices else ""
+                    
+                    print(f"  🔍 Response content type: {type(response_content)}")
+                    print(f"  🔍 Response content length: {len(response_content) if response_content else 0}")
                     
                     # Parse objectives from response
-                    updated_objectives = self._parse_objectives_from_response(response.content)
+                    updated_objectives = self._parse_objectives_from_response(response_content)
                     
-                    print(f"  🔍 Raw LLM response: '{response.content}'")
+                    print(f"  🔍 Raw LLM response: '{response_content}'")
                     print(f"  🔍 Parsed objectives: {updated_objectives}")
                     
                     if updated_objectives:
@@ -2789,6 +2841,8 @@ Focus on objectives the agent has actually discovered through gameplay patterns 
                         )
                     else:
                         print("  ⚠️ No objectives parsed from LLM response")
+                        # IMPORTANT: Still update the turn counter to prevent repeated attempts every turn
+                        self.objective_update_turn = self.turn_count
                         self.logger.warning(
                             "No objectives parsed from LLM response",
                             extra={
@@ -2796,7 +2850,7 @@ Focus on objectives the agent has actually discovered through gameplay patterns 
                                     "event_type": "objectives_parsing_failed",
                                     "episode_id": self.episode_id,
                                     "turn": self.turn_count,
-                                    "llm_response": response.content,
+                                    "llm_response": response_content,
                                 }
                             },
                         )
@@ -3050,7 +3104,7 @@ Only mark objectives as completed if you're confident they were achieved."""
                 )
                 
                 # Parse completed objectives
-                completed_objectives = self._parse_completed_objectives(response.content)
+                completed_objectives = self._parse_completed_objectives(response.choices[0].message.content if response.choices else "")
                 
                 if completed_objectives:
                     self._mark_objectives_complete(completed_objectives, action_taken, completion_signals)
@@ -3280,7 +3334,8 @@ Please provide a refined list of objectives that encourages exploration and prog
                     **sampling_params
                 )
 
-                refined_objectives = self._parse_objectives_from_response(response.content)
+                response_content = response.choices[0].message.content if response.choices else ""
+                refined_objectives = self._parse_objectives_from_response(response_content)
 
                 if refined_objectives:
                     self.logger.info(f"Objective list refined from {len(self.discovered_objectives)} to {len(refined_objectives)} objectives.", extra={
@@ -3288,14 +3343,14 @@ Please provide a refined list of objectives that encourages exploration and prog
                         "episode_id": self.episode_id
                     })
                     self.discovered_objectives = refined_objectives
-                elif response.content.strip().upper() == "OBJECTIVES:\nNONE":
+                elif response_content.strip().upper() == "OBJECTIVES:\nNONE":
                     self.logger.info("Objective list refined to None as per LLM response.", extra={
                         "turn": self.turn_count,
                         "episode_id": self.episode_id
                     })
                     self.discovered_objectives = []
                 else:
-                    self.logger.warning(f"Objective refinement LLM call returned an unexpected or empty response. Raw: '{response.content[:200]}...' No changes made to objectives.", extra={
+                    self.logger.warning(f"Objective refinement LLM call returned an unexpected or empty response. Raw: '{response_content[:200]}...' No changes made to objectives.", extra={
                         "turn": self.turn_count,
                         "episode_id": self.episode_id
                     })

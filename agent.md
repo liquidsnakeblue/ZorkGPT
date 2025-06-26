@@ -61,7 +61,7 @@ Zork often has unlisted exits. The `## CURRENT WORLD MAP` (Mermaid Diagram) in y
 4. **Interact:** Once confident about exits, examine objects and attempt puzzles.
 
 **LOOP DETECTION AND ESCAPE:**
-- **Signs of a loop:** Same location for 3+ turns WITH no new discoveries, repetitive failed actions, no progress, declining critic scores.
+- **Signs of a loop:** Same location for 5+ turns WITH no new discoveries, repetitive failed actions, no progress, declining critic scores.
 - **CRITICAL**: If you just discovered something new (like revealing a grating), that's NOT a loop - explore it!
 - **Escape Protocol:**
     1. **STOP** current actions.
