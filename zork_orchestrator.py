@@ -821,6 +821,8 @@ class ZorkOrchestrator:
                             "original_reasoning": critic_justification,
                         },
                     )
+                    # If override is granted, we can proceed with the action
+                    break
 
                 # Log agent action
                 self.logger.info(
@@ -857,42 +859,47 @@ class ZorkOrchestrator:
                     }
                 )
 
-                # Track rejected action and get a new one
-                self.critic.rejection_system.rejected_actions_this_turn.append(
-                    agent_action
-                )
+                # If override was not granted, we need to get a new action
+                if not override_needed:
+                    # Track rejected action and get a new one
+                    self.critic.rejection_system.rejected_actions_this_turn.append(
+                        agent_action
+                    )
 
-                # Get new action from agent with reasoning
-                rejected_actions_context = ", ".join(
-                    self.critic.rejection_system.rejected_actions_this_turn
-                )
-                agent_response = self.agent.get_action_with_reasoning(
-                    game_state_text=current_game_state
-                    + f"\n\n[Previous action(s) '{rejected_actions_context}' were rejected by critic: {critic_justification}]",
-                    previous_actions_and_responses=self.action_history[-5:],
-                    action_counts=self.action_counts,
-                    relevant_memories=relevant_memories,
-                )
-                agent_action = agent_response["action"]
-                agent_reasoning = agent_response["reasoning"]
+                    # Only get a new action if we haven't exhausted attempts
+                    if rejection_attempt < max_rejections - 1:
+                        # Get new action from agent with reasoning
+                        rejected_actions_context = ", ".join(
+                            self.critic.rejection_system.rejected_actions_this_turn
+                        )
+                        agent_response = self.agent.get_action_with_reasoning(
+                            game_state_text=current_game_state
+                            + f"\n\n[Previous action(s) '{rejected_actions_context}' were rejected by critic: {critic_justification}]",
+                            previous_actions_and_responses=self.action_history[-5:],
+                            action_counts=self.action_counts,
+                            relevant_memories=relevant_memories,
+                        )
+                        agent_action = agent_response["action"]
+                        agent_reasoning = agent_response["reasoning"]
 
-                # Re-evaluate new action
-                critic_response = self.critic.get_robust_evaluation(
-                    game_state_text=current_game_state,
-                    proposed_action=agent_action,
-                    available_exits=current_exits,
-                    action_counts=self.action_counts,
-                    previous_actions_and_responses=self.action_history[-3:],
-                    current_location_name=self.current_room_name_for_map,
-                    failed_actions_by_location=self.failed_actions_by_location,
-                )
-                critic_score_val = critic_response.score
-                critic_justification = critic_response.justification
+                        # Re-evaluate new action
+                        critic_response = self.critic.get_robust_evaluation(
+                            game_state_text=current_game_state,
+                            proposed_action=agent_action,
+                            available_exits=current_exits,
+                            action_counts=self.action_counts,
+                            previous_actions_and_responses=self.action_history[-3:],
+                            current_location_name=self.current_room_name_for_map,
+                            failed_actions_by_location=self.failed_actions_by_location,
+                        )
+                        critic_score_val = critic_response.score
+                        critic_justification = critic_response.justification
+                        critic_confidence = getattr(critic_response, "confidence", 0.8)
 
-            # If we've exhausted all rejection attempts, log a warning
+            # If we've exhausted all rejection attempts and still have a low score, skip this turn
             if critic_score_val < rejection_threshold and not was_overridden:
                 self.logger.warning(
-                    f"Exhausted rejection attempts, proceeding with low-scoring action: {agent_action} (score: {critic_score_val:.2f})",
+                    f"Exhausted rejection attempts, SKIPPING turn due to low-scoring action: {agent_action} (score: {critic_score_val:.2f})",
                     extra={
                         "event_type": "rejection_attempts_exhausted",
                         "episode_id": self.episode_id,
@@ -902,6 +909,13 @@ class ZorkOrchestrator:
                         "threshold": rejection_threshold,
                     },
                 )
+                
+                # Update trust tracker - critic was right to reject
+                self.critic.trust_tracker.update_trust(was_rejection_correct=True)
+                
+                # Skip this turn - don't execute the bad action
+                self.turn_count += 1
+                continue
 
             # Store reasoning for state export
             self.action_reasoning_history.append(

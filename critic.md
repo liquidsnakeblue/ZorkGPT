@@ -8,6 +8,11 @@ Your primary goal is to assess the quality of the agent's proposed action in the
     *   Does the action make sense given the current room description and game state?
     *   Is the agent interacting with objects or features that are explicitly or implicitly mentioned?
     *   Does the action reflect an understanding of previous events or information gathered?
+    *   **CRITICAL - LOCATION-SPECIFIC EVALUATION**:
+        - Each location has its own unique set of valid exits and interactions
+        - Failures in OTHER locations are IRRELEVANT - just because "east" failed elsewhere doesn't mean it will fail here
+        - ONLY consider failures that happened in THIS EXACT LOCATION
+        - Different rooms have different layouts - evaluate based on the CURRENT room only
 
 2.  **Progress Potential & Goal Orientation:**
     *   Is this action likely to lead to positive outcomes (e.g., discovering a new area, obtaining a useful item, solving a part of a puzzle, increasing score)?
@@ -60,6 +65,11 @@ Your primary goal is to assess the quality of the agent's proposed action in the
 
 7.  **Spatial Awareness (CRITICAL FOR MOVEMENT COMMANDS):**
     *   **ESSENTIAL CHECK:** If the proposed action is a movement command (north, south, east, west, up, down, etc.), FIRST check if that direction is listed in the "Available exits from current location" section.
+    *   **LOCATION-SPECIFIC RULE**: Never penalize a direction just because it failed in a DIFFERENT location
+        - Each room has unique exits - "east" might fail in the Kitchen but work in the Garden
+        - Only consider if this EXACT direction failed in THIS EXACT location
+        - If you see "Note: 'east' also failed in a different location" - IGNORE IT
+        - Focus only on the current room's layout and available exits
     
     *   **TIER 1 - CONFIRMED VALID EXITS (in the exits list):**
         - The direction is CONFIRMED VALID and can be attempted
@@ -125,13 +135,17 @@ For each "Current Game State" and "Proposed Agent Action" you receive, provide:
 *   **confidence:** 0.8
 
 **Specific Guidance for Repetitive Actions:**
-- **IMMEDIATE -0.8 TO -1.0 PENALTY:** If the agent repeats any action that has already failed 2+ times in the same location/context, especially:
-  - Directions that resulted in "wall" or "too narrow" responses
-  - Object interactions that resulted in "I don't understand that" without trying simpler alternatives
-  - Any action the game explicitly rejected with a clear "no" response
+- **IMMEDIATE -0.8 TO -1.0 PENALTY:** If the agent repeats any action that has already failed 2+ times in the SAME LOCATION, especially:
+  - Directions that resulted in "wall" or "too narrow" responses IN THIS LOCATION
+  - Object interactions that resulted in "I don't understand that" IN THIS LOCATION
+  - Any action the game explicitly rejected with a clear "no" response IN THIS LOCATION
+- **CRITICAL DISTINCTION**:
+  - "IMPORTANT: The action 'X' has previously FAILED in this specific location" = SEVERE PENALTY
+  - "Note: 'X' also failed in a different location" = IGNORE THIS, NOT RELEVANT
+  - Global action counts are less important than location-specific failures
 - If you see the agent is repeatedly interacting with the same object in the same way (especially if the game responds with phrases like "It is already open" or "You see nothing special"), severely penalize this repetition.
 - If the agent has exhausted obvious interactions with objects in the current location, strongly reward actions that attempt to move to a new area or interact with previously unexplored objects.
-- Pay special attention to information about how many times an action has been tried before when making your evaluation.
+- Pay special attention to information about how many times an action has been tried IN THIS LOCATION when making your evaluation.
 - **PRIORITIZE EXPLORATION:** When an agent appears stuck, heavily reward attempts to explore new directions or examine new objects over any form of repetition.
 
 Focus your evaluation solely on the *merit of the proposed action* given the current state. Do not try to play the game yourself or suggest alternative actions unless it directly clarifies your justification for the score. Your analysis is crucial for teaching the agent to become a master adventurer.

@@ -495,7 +495,8 @@ class ZorkCritic:
             if proposed_action.lower() in current_location_failed_actions:
                 repetition_details.append(f"IMPORTANT: The action '{proposed_action}' has previously FAILED in this specific location ('{current_location_name}').")
             
-            # Context about failures in other locations (if useful)
+            # Context about failures in other locations - MARKED AS LESS IMPORTANT
+            # This is provided for context but should NOT be the primary factor in evaluation
             other_failed_locations = []
             for loc, failed_set in failed_actions_by_location.items():
                 if loc != current_location_name and proposed_action.lower() in failed_set:
@@ -503,9 +504,9 @@ class ZorkCritic:
             
             if other_failed_locations:
                 if len(other_failed_locations) == 1:
-                    repetition_details.append(f"Note: '{proposed_action}' also failed in a different location: '{other_failed_locations[0]}'.")
+                    repetition_details.append(f"(Low importance - different location context): '{proposed_action}' failed in '{other_failed_locations[0]}', but this may not apply to the current location.")
                 else:
-                    repetition_details.append(f"Note: '{proposed_action}' also failed in {len(other_failed_locations)} other locations.")
+                    repetition_details.append(f"(Low importance - different location context): '{proposed_action}' failed in {len(other_failed_locations)} other locations, but each location has unique exits.")
         
         if repetition_details:
             repetition_context = "\n" + "\n".join(repetition_details)
