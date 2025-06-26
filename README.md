@@ -1,3 +1,7 @@
+Hello, I wanted to experiment with this and make some improvments.  Thanks to the creator.
+
+Original Readme Below:
+
 # ZorkGPT: An LLM-Powered Agent for Interactive Fiction
 
 **🎮 Watch ZorkGPT play live at [https://zorkgpt.com](https://zorkgpt.com)**
