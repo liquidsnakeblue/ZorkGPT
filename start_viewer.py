@@ -14,7 +14,7 @@ import os
 import sys
 
 
-def start_server(port=8000):
+def start_server(port=10000):
     """Start HTTP server in a separate thread."""
     handler = http.server.SimpleHTTPRequestHandler
 
@@ -23,21 +23,21 @@ def start_server(port=8000):
         def log_message(self, format, *args):
             pass
 
-    with socketserver.TCPServer(("", port), QuietHandler) as httpd:
-        print(f"🌐 HTTP server started at http://localhost:{port}")
-        print(f"📁 Serving files from: {os.getcwd()}")
+    with socketserver.TCPServer(("0.0.0.0", port), QuietHandler) as httpd:
+        print(f"HTTP server started at http://localhost:{port}")
+        print(f"Serving files from: {os.getcwd()}")
         httpd.serve_forever()
 
 
 def main():
-    port = 8000
+    port = 10000
 
-    print("🎮 ZorkGPT Live Viewer Launcher")
+    print("ZorkGPT Live Viewer Launcher")
     print("=" * 40)
 
     # Check if viewer file exists
     if not os.path.exists("zork_viewer.html"):
-        print("❌ Error: zork_viewer.html not found in current directory")
+        print("Error: zork_viewer.html not found in current directory")
         print("   Make sure you're running this from the ZorkGPT project root")
         sys.exit(1)
 
@@ -46,7 +46,7 @@ def main():
     state_file_exists = any(os.path.exists(f) for f in state_files)
 
     if not state_file_exists:
-        print("⚠️  Warning: No state file found")
+        print("Warning: No state file found")
         print("   Run ZorkGPT first to generate current_state.json")
         print("   Or run test_state_export.py for a quick test")
 
@@ -59,16 +59,16 @@ def main():
 
     # Open browser
     viewer_url = f"http://localhost:{port}/zork_viewer.html"
-    print(f"🚀 Opening viewer at: {viewer_url}")
+    print(f"Opening viewer at: {viewer_url}")
 
     try:
         webbrowser.open(viewer_url)
-        print("✅ Browser opened successfully")
+        print("Browser opened successfully")
     except Exception as e:
-        print(f"⚠️  Could not open browser automatically: {e}")
+        print(f"Could not open browser automatically: {e}")
         print(f"   Please manually open: {viewer_url}")
 
-    print("\n📋 Instructions:")
+    print("\nInstructions:")
     print("1. The viewer will automatically refresh every 3 seconds")
     print("2. Run ZorkGPT in another terminal to see live updates")
     print("3. Press Ctrl+C to stop the server")
@@ -78,7 +78,7 @@ def main():
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n👋 Shutting down server...")
+        print("\nShutting down server...")
         print("   Browser tab will stop updating but can remain open")
 
 

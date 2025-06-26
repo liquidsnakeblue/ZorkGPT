@@ -26,22 +26,22 @@ class ZorkGPTViewerStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # Domain configuration
-        domain_name = "zorkgpt.com"
+        domain_name = "zorkgpt.schuyler.ai"
+        base_domain = "schuyler.ai"
         
-        # Create a new hosted zone for the domain
-        hosted_zone = route53.HostedZone(
+        # Look up existing hosted zone for the base domain
+        # If you don't have a hosted zone for schuyler.ai, you'll need to create one
+        hosted_zone = route53.HostedZone.from_lookup(
             self,
-            "ZorkGPTHostedZone",
-            zone_name=domain_name,
-            comment="Hosted zone for ZorkGPT domain",
+            "SchuylerHostedZone",
+            domain_name=base_domain,
         )
 
-        # Create SSL certificate for the domain (must be in us-east-1 for CloudFront)
+        # Create SSL certificate for the subdomain (must be in us-east-1 for CloudFront)
         certificate = acm.Certificate(
             self,
             "ZorkGPTCertificate",
             domain_name=domain_name,
-            subject_alternative_names=[f"www.{domain_name}"],
             validation=acm.CertificateValidation.from_dns(hosted_zone),
         )
 
@@ -149,29 +149,19 @@ class ZorkGPTViewerStack(Stack):
             comment="CloudFront distribution for ZorkGPT Live Viewer",
             enabled=True,
             # Custom domain configuration
-            domain_names=[domain_name, f"www.{domain_name}"],
+            domain_names=[domain_name],
             certificate=certificate,
         )
 
         # Grant CloudFront OAI access to the S3 bucket
         self.bucket.grant_read(oai)
 
-        # Create Route53 A records to point domain to CloudFront distribution
+        # Create Route53 A record to point subdomain to CloudFront distribution
         route53.ARecord(
             self,
             "ZorkGPTARecord",
             zone=hosted_zone,
-            record_name=domain_name,
-            target=route53.RecordTarget.from_alias(
-                targets.CloudFrontTarget(self.distribution)
-            ),
-        )
-
-        route53.ARecord(
-            self,
-            "ZorkGPTWWWARecord",
-            zone=hosted_zone,
-            record_name=f"www.{domain_name}",
+            record_name="zorkgpt",  # This creates zorkgpt.schuyler.ai
             target=route53.RecordTarget.from_alias(
                 targets.CloudFrontTarget(self.distribution)
             ),

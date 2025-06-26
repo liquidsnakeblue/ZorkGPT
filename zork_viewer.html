@@ -1282,7 +1282,7 @@
                 }
 
                 try {
-                    const response = await fetch(this.stateUrl);
+                    const response = await fetch(this.stateUrl, { cache: 'no-cache' });
                     if (response.ok) {
                         const newState = await response.json();
                         
@@ -1847,7 +1847,7 @@
                     // Initialize historical data manager if needed
                     if (!this.historicalDataManager) {
                         const episodeId = this.currentState.metadata.episode_id;
-                        this.historicalDataManager = new HistoricalDataManager('./zorkgpt', episodeId);
+                        this.historicalDataManager = new HistoricalDataManager('.', episodeId);
                     }
 
                     // Determine range to load (20 turns before earliest loaded)
@@ -1965,7 +1965,7 @@
             // Episode management methods
             async loadEpisodeIndex() {
                 try {
-                    const response = await fetch('./zorkgpt/episodes.json');
+                    const response = await fetch('./episodes.json');
                     if (response.ok) {
                         const episodeIndex = await response.json();
                         this.availableEpisodes = episodeIndex.episodes || [];
@@ -2236,10 +2236,10 @@
         async function initializeViewer() {
             try {
                 // Try live file first (works for both local and S3 deployment)
-                const response = await fetch('./zorkgpt/current_state.json');
+                const response = await fetch('./current_state.json');
                 if (response.ok) {
                     console.log('Using current_state.json (live)');
-                    return new ZorkGameViewer('./zorkgpt/current_state.json');
+                    return new ZorkGameViewer('./current_state.json');
                 }
             } catch (e) {
                 console.log('current_state.json not available');

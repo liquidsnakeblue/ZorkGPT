@@ -10,8 +10,8 @@ def run_episode():
 
     orchestrator = ZorkOrchestrator()
 
-    print("🚀 Starting long episode with adaptive knowledge management...")
-    print(f"📋 Configuration:")
+    print("Starting long episode with adaptive knowledge management...")
+    print(f"Configuration:")
     print(f"  - Max turns: {orchestrator.max_turns_per_episode}")
     print(
         f"  - Knowledge update interval: {orchestrator.knowledge_update_interval} turns"
@@ -21,7 +21,7 @@ def run_episode():
     print(f"  - Turn delay: {orchestrator.turn_delay_seconds} seconds")
     print(f"  - S3 bucket: {orchestrator.s3_bucket or 'Not configured'}")
     print(
-        f"  - S3 client: {'✅ Available' if orchestrator.s3_client else '❌ Not available'}"
+        f"  - S3 client: {'Available' if orchestrator.s3_client else 'Not available'}"
     )
     print(f"  - Game working directory: {orchestrator.zork_workdir_abs_path}")
     print(f"  - Save file template: {orchestrator.zork_save_filename_template}")
@@ -31,7 +31,7 @@ def run_episode():
         try:
             final_score = orchestrator.play_episode(zork_game)
 
-            print(f"\n🎯 Episode Complete!")
+            print(f"\nEpisode Complete!")
             print(f"  - Final score: {final_score}")
             print(f"  - Turns played: {orchestrator.turn_count}")
 
@@ -47,10 +47,10 @@ def run_episode():
 
             print(f"  - Regular knowledge updates: {regular_updates}")
             if final_update_eligible:
-                print(f"  - Final update: ✅ (analyzed {turns_since_last} turns)")
+                print(f"  - Final update: (analyzed {turns_since_last} turns)")
             else:
                 print(
-                    f"  - Final update: ❌ (only {turns_since_last} turns since last update)"
+                    f"  - Final update: (only {turns_since_last} turns since last update)"
                 )
 
             # Show the final knowledge base
@@ -58,7 +58,7 @@ def run_episode():
                 with open("knowledgebase.md", "r") as f:
                     knowledge_content = f.read()
                     print(
-                        f"\n📚 Final knowledge base ({len(knowledge_content)} characters):"
+                        f"\nFinal knowledge base ({len(knowledge_content)} characters):"
                     )
                     print("=" * 60)
                     print(
@@ -67,10 +67,10 @@ def run_episode():
                         else knowledge_content
                     )
             except FileNotFoundError:
-                print("\n📚 No knowledge base file found")
+                print("\nNo knowledge base file found")
 
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"Error: {e}")
             import traceback
 
             traceback.print_exc()
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         try:
             run_episode()
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"Error: {e}")
             import traceback
 
             traceback.print_exc()

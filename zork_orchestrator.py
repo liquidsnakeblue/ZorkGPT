@@ -11,7 +11,7 @@ This module contains the main game loop and ties together all other modules:
 
 from typing import List, Tuple, Optional, Dict, Any
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import json
 import time
@@ -1132,59 +1132,6 @@ class ZorkOrchestrator:
             # Check for context overflow and trigger summarization if needed
             self._check_context_overflow()
             
-            # Consolidate fragmented map locations only when new rooms have been added
-            if self.game_map.needs_consolidation():
-                try:
-                    # First, perform map consolidation to merge similar locations
-                    consolidations = self.game_map.consolidate_similar_locations()
-                    if consolidations > 0:
-                        self.logger.info(
-                            f"Map consolidation completed: {consolidations} locations merged",
-                            extra={
-                                "extras": {
-                                    "event_type": "map_consolidation",
-                                    "episode_id": self.episode_id,
-                                    "turn": self.turn_count,
-                                    "consolidations_performed": consolidations,
-                                }
-                            },
-                        )
-                
-                    # Enhanced base name consolidation to address main fragmentation source
-                    base_consolidations = self.game_map.consolidate_base_name_variants()
-                    if base_consolidations > 0:
-                        self.logger.info(
-                            f"Enhanced base name consolidation completed: {base_consolidations} locations merged",
-                            extra={
-                                "extras": {
-                                    "event_type": "base_name_consolidation",
-                                    "episode_id": self.episode_id,
-                                    "turn": self.turn_count,
-                                    "base_consolidations_performed": base_consolidations,
-                                }
-                            },
-                        )
-                
-                    # Then, prune fragmented nodes that serve no navigation purpose
-                    pruned_nodes = self.game_map.prune_fragmented_nodes()
-                    if pruned_nodes > 0:
-                        self.logger.info(
-                            f"Map pruning completed: {pruned_nodes} fragmented nodes removed",
-                            extra={
-                                "extras": {
-                                    "event_type": "map_pruning",
-                                    "episode_id": self.episode_id,
-                                    "turn": self.turn_count,
-                                    "nodes_pruned": pruned_nodes,
-                                }
-                            },
-                        )
-                except Exception as e:
-                    self.logger.warning(f"Failed to consolidate map: {e}", extra={
-                        "turn": self.turn_count,
-                        "episode_id": self.episode_id
-                    })
-
             # Export current state after each turn
             self.export_current_state()
 
@@ -1841,7 +1788,7 @@ class ZorkOrchestrator:
         state = {
             "metadata": {
                 "episode_id": self.episode_id,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "turn_count": self.turn_count,
                 "game_over": self.game_over_flag,
                 "score": self.previous_zork_score,
@@ -2087,31 +2034,31 @@ class ZorkOrchestrator:
         return [action for action, _ in recent_actions]
 
     def export_current_state(self) -> None:
-        """Export current state to file and optionally to S3."""
+        """Export the current game state to a JSON file and optionally to S3."""
         if not self.enable_state_export:
             return
 
         try:
-            state = self.get_current_state()
+            current_state = self.get_current_state()
+            temp_file_path = f"{self.state_export_file}.tmp"
+            final_file_path = self.state_export_file
 
-            # Export to local file
-            temp_file = f"{self.state_export_file}.tmp"
-            with open(temp_file, "w") as f:
-                json.dump(state, f, indent=2)
+            # Write to a temporary file first
+            with open(temp_file_path, "w") as f:
+                json.dump(current_state, f, indent=4)
 
-            # Atomic rename
-            os.rename(temp_file, self.state_export_file)
+            # Atomically replace the final file with the temporary file
+            os.replace(temp_file_path, final_file_path)
 
             # Upload to S3 if configured
-            if self.s3_client and self.s3_bucket:
-                self.upload_state_to_s3(state)
+            if self.s3_client:
+                self._upload_state_to_s3(final_file_path)
 
         except Exception as e:
-            if self.logger:
-                self.logger.warning(f"Failed to export current state: {e}", extra={
-                    "turn": self.turn_count,
-                    "episode_id": self.episode_id
-                })
+            self.logger.warning(f"Failed to export current state: {e}", extra={
+                "turn": self.turn_count,
+                "episode_id": self.episode_id
+            })
 
     def upload_state_to_s3(self, state: Dict[str, Any]) -> None:
         """Upload current state to S3."""
