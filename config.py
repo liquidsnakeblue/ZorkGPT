@@ -15,13 +15,16 @@ from dotenv import load_dotenv
 
 class LLMConfig(BaseModel):
     """LLM configuration settings."""
-    client_base_url: str = "http://schuyler.ai:300001"
+    client_base_url: str = "http://192.168.4.245:1234/v1"
     
     # Model configurations
-    agent_model: str = "qwen3-32b"
-    info_ext_model: str = "qwen3-32b"
-    critic_model: str = "qwen3-32b"
-    analysis_model: str = "qwen3-32b"
+    agent_model: str = "google/gemini-2.5-pro"
+    info_ext_model: str = "google/gemini-2.5-pro"
+    critic_model: str = "google/gemini-2.5-pro"
+    analysis_model: str = "google/gemini-2.5-pro"
+    
+    # Display name for current model (shown in GUI)
+    current_model_display: str = "Default Model"
     
     # Per-model base URLs (optional, falls back to client_base_url if not specified)
     agent_base_url: Optional[str] = None
@@ -65,7 +68,7 @@ class CriticSamplingConfig(BaseModel):
     top_p: Optional[float] = None
     top_k: Optional[int] = None
     min_p: Optional[float] = None
-    max_tokens: int = 100
+    max_tokens: Optional[int] = None
 
 
 class ExtractorSamplingConfig(BaseModel):
@@ -74,7 +77,7 @@ class ExtractorSamplingConfig(BaseModel):
     top_p: Optional[float] = None
     top_k: Optional[int] = None
     min_p: Optional[float] = None
-    max_tokens: int = 300
+    max_tokens: Optional[int] = None
 
 
 class AnalysisSamplingConfig(BaseModel):

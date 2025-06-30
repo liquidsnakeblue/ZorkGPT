@@ -376,11 +376,24 @@ class MapGraph:
             self.has_new_rooms_since_consolidation = True
         return self.rooms[room_key]
 
-    def update_room_exits(self, room_name: str, new_exits: List[str]):
+    def update_room_exits(self, room_name: str, new_exits: List[str], merge: bool = True):
+        """
+        Update the exits for a room.
+        
+        Args:
+            room_name: The name of the room
+            new_exits: List of exits to add
+            merge: If True (default), merge with existing exits. If False, replace exits.
+        """
         # Use the room name as-is to match add_room behavior (no normalization)
         room_key = room_name
         if room_key not in self.rooms:
             self.add_room(room_name)
+
+        # Get existing exits if merging
+        existing_exits = set()
+        if merge and room_key in self.rooms:
+            existing_exits = set(self.rooms[room_key].exits)
 
         # Normalize exit names for consistency
         normalized_new_exits = set()
@@ -400,10 +413,18 @@ class MapGraph:
                 if clean_exit:
                     normalized_new_exits.add(clean_exit.lower())
 
+        # Merge with existing exits if requested
+        if merge:
+            all_exits = existing_exits | normalized_new_exits
+        else:
+            all_exits = normalized_new_exits
+
         # Filter out exits that have been permanently pruned
         pruned_exits_for_room = self.pruned_exits.get(room_key, set())
         
-        for exit_name in normalized_new_exits:
+        # Clear and re-add all exits (to handle both merge and replace cases)
+        self.rooms[room_key].exits.clear()
+        for exit_name in all_exits:
             # Don't re-add exits that have been pruned as invalid
             if exit_name not in pruned_exits_for_room:
                 self.rooms[room_key].add_exit(exit_name)

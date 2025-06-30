@@ -31,6 +31,13 @@ Always use consistent, clear naming patterns that create logical spatial relatio
 ### Exit Identification - COMPREHENSIVE DETECTION
 **Primary Goal**: Identify ALL potential points of passage described in the game text, including non-obvious ones.
 
+**CRITICAL RULE FOR MOVEMENT FAILURES**:
+When the game responds to a movement attempt with a failure message (e.g., "The forest becomes impenetrable to the north", "There is a wall there", "You can't go that way"):
+1. DO NOT extract any exits from the failure message
+2. Return an EMPTY exits list: []
+3. The map system will preserve the existing exits for this location
+4. This prevents the incorrect interpretation of failure messages as exit lists
+
 **CRITICAL: Open Field/Outdoor Location Rule**
 For outdoor locations (fields, clearings, areas around buildings), ALWAYS consider that cardinal directions (north, south, east, west) may be available even if not explicitly mentioned. Zork frequently allows movement in cardinal directions from outdoor areas without describing them in the room text.
 
@@ -97,7 +104,35 @@ Combat is a **persistent state** that continues across multiple turns until expl
 **No Location Change Situations:**
 If the text represents an action result without location change, keep the location consistent with previous extractions. Examples:
 - "Taken." → Use previous location
-- "I see nothing special." → Use previous location  
+- "I see nothing special." → Use previous location
+
+**CRITICAL - Movement Failure Handling:**
+When a movement attempt fails, this does NOT change the available exits from the current location. Movement failures are informational messages about blocked paths, not new location descriptions.
+
+**Examples of Movement Failures (DO NOT extract these as new exits):**
+- "The forest becomes impenetrable to the north." → This means north is BLOCKED, not that north is the only exit
+- "There is a wall there." → The attempted direction is blocked
+- "You can't go that way." → The attempted direction is invalid
+- "The door is locked." → The path exists but is currently blocked
+
+**Key Rule**: After a movement failure:
+1. Maintain the SAME location name as before the failed attempt
+2. Maintain the SAME exits list as when the location was first entered
+3. Do NOT extract the failed direction as the only available exit
+4. Do NOT clear the exits list based on failure messages
+
+**Example Scenario**:
+- Location: "Forest" with exits ["north", "south", "east", "west"]
+- Action: "north"
+- Response: "The forest becomes impenetrable to the north."
+- CORRECT extraction: Location="Forest", exits=[] (empty list - let map preserve existing exits)
+- INCORRECT extraction: Location="Forest", exits=["north"] (wrong - this would override all other exits!)
+
+**Why return empty exits on movement failures?**
+- The failure message doesn't describe the room's exits
+- Returning an empty list tells the map system "no new exit information"
+- The map's merge functionality will preserve the existing exits
+- This prevents the critical bug where valid exits get lost after failed movements
 - "With great effort, you open the window." → Use previous location
 - Reading text content → Use previous location
 

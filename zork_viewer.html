@@ -131,6 +131,16 @@
                 margin-bottom: 10px;
             }
             
+            .header-right {
+                align-self: stretch !important;
+                align-items: flex-start !important;
+            }
+            
+            .current-model-display {
+                font-size: 12px !important;
+                padding: 4px 8px !important;
+            }
+            
             .header-links {
                 gap: 10px;
             }
@@ -843,13 +853,18 @@
                     <span class="status-indicator" id="connection-status"></span>
                     ZorkGPT Live Viewer
                 </h1>
-                <div class="header-links">
-                    <a href="https://github.com/stickystyle/ZorkGPT" target="_blank" style="color: #007bff; text-decoration: none; font-weight: 500;">
-                        📁 Project
-                    </a>
-                    <a href="#faq" onclick="showFAQ()" style="color: #007bff; text-decoration: none; font-weight: 500; cursor: pointer;">
-                        ❓ FAQ
-                    </a>
+                <div class="header-right" style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+                    <div class="current-model-display" style="background: #e3f2fd; color: #1565c0; padding: 6px 12px; border-radius: 8px; font-size: 14px; font-weight: 500; border: 1px solid #bbdefb;">
+                        Current Model: <span id="current-model">Loading...</span>
+                    </div>
+                    <div class="header-links">
+                        <a href="https://github.com/stickystyle/ZorkGPT" target="_blank" style="color: #007bff; text-decoration: none; font-weight: 500;">
+                            📁 Project
+                        </a>
+                        <a href="#faq" onclick="showFAQ()" style="color: #007bff; text-decoration: none; font-weight: 500; cursor: pointer;">
+                            ❓ FAQ
+                        </a>
+                    </div>
                 </div>
             </div>
             <div class="info-grid">
@@ -1431,6 +1446,14 @@
                     current.inventory.length > 0 ? current.inventory.join(', ') : 'Empty';
                 document.getElementById('death-count').textContent = 
                     current.death_count || 0;
+                
+                // Update current model display
+                const currentModelElement = document.getElementById('current-model');
+                if (meta.current_model_display) {
+                    currentModelElement.textContent = meta.current_model_display;
+                } else {
+                    currentModelElement.textContent = 'Unknown';
+                }
                 
                 // Update FAQ model information
                 if (meta.models) {

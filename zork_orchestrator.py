@@ -429,6 +429,80 @@ class ZorkOrchestrator:
         
         return feasible
 
+    def _build_agent_context(self, base_game_state: str, rejected_actions: list = None,
+                           critic_justification: str = None) -> str:
+        """Build enriched context for the agent including available actions."""
+        context_parts = [base_game_state]
+        
+        # Add available exits if known
+        if self.memory_log_history:
+            last_extraction = self.memory_log_history[-1]
+            exits = getattr(last_extraction, "exits", [])
+            if exits:
+                context_parts.append(f"\nAvailable exits: {', '.join(exits)}")
+            
+            # Add visible objects
+            objects = getattr(last_extraction, "visible_objects", [])
+            if objects:
+                context_parts.append(f"Visible objects: {', '.join(objects)}")
+        
+        # Add rejection context if provided
+        if rejected_actions and critic_justification:
+            rejection_msg = (
+                f"\n\n[Previous action(s) '{', '.join(rejected_actions)}' were rejected by critic: "
+                f"{critic_justification}]"
+            )
+            context_parts.append(rejection_msg)
+            
+            # Add helpful hints based on what was rejected
+            if any(direction in str(rejected_actions).lower()
+                   for direction in ['north', 'south', 'east', 'west', 'up', 'down']):
+                context_parts.append("\nHint: Movement was rejected. Try examining objects or taking items instead.")
+            elif 'examine' in str(rejected_actions).lower():
+                context_parts.append("\nHint: Examination was rejected. Try movement or taking items instead.")
+        
+        return "\n".join(context_parts)
+
+    def _get_fallback_action(self, failed_actions: list) -> str:
+        """Generate a fallback action when agent is stuck."""
+        # Get current context
+        current_exits = []
+        visible_objects = []
+        
+        if self.memory_log_history:
+            last_extraction = self.memory_log_history[-1]
+            current_exits = getattr(last_extraction, "exits", [])
+            visible_objects = getattr(last_extraction, "visible_objects", [])
+        
+        # Priority 1: Take any items not yet taken
+        for obj in visible_objects:
+            if any(item_word in obj.lower() for item_word in 
+                   ['leaflet', 'lamp', 'sword', 'bottle', 'sack', 'garlic', 'rope']):
+                take_cmd = f"take {obj}"
+                if take_cmd not in failed_actions:
+                    return take_cmd
+        
+        # Priority 2: Try an unexplored exit
+        for exit_dir in current_exits:
+            if exit_dir not in failed_actions:
+                return exit_dir
+        
+        # Priority 3: Examine an unexamined object  
+        for obj in visible_objects:
+            examine_cmd = f"examine {obj}"
+            if examine_cmd not in failed_actions and obj not in str(failed_actions):
+                return examine_cmd
+        
+        # Priority 4: Try standard directions not in exits list
+        standard_dirs = ['north', 'south', 'east', 'west', 'up', 'down']
+        for direction in standard_dirs:
+            if direction not in current_exits and direction not in failed_actions:
+                return direction
+        
+        # Priority 5: Basic exploration
+        return "look"
+
+
     def reset_episode_state(self) -> None:
         """Reset all episode-specific state variables."""
         self.action_counts = Counter()
@@ -670,6 +744,15 @@ class ZorkOrchestrator:
                         # Check if this is a death and increment counter
                         if self._is_death_reason(game_over_reason):
                             self.death_count += 1
+                            self.logger.info(
+                                f"Death detected! Total deaths across all episodes: {self.death_count}",
+                                extra={
+                                    "event_type": "death_detected",
+                                    "episode_id": self.episode_id,
+                                    "turn": self.turn_count,
+                                    "cumulative_death_count": self.death_count,
+                                }
+                            )
                         
                         # Set the game over flag for state export
                         self.game_over_flag = True
@@ -793,7 +876,7 @@ class ZorkOrchestrator:
 
             # Get agent action with reasoning
             agent_response = self.agent.get_action_with_reasoning(
-                game_state_text=current_game_state,
+                game_state_text=self._build_agent_context(current_game_state),
                 previous_actions_and_responses=self.action_history[
                     -50:
                 ],  # Last 50 actions - increased from 5 for better context
@@ -820,6 +903,7 @@ class ZorkOrchestrator:
                 ],  # Last 3 actions
                 current_location_name=self.current_room_name_for_map,
                 failed_actions_by_location=self.failed_actions_by_location,
+                current_inventory=self.current_inventory,
             )
 
             critic_score_val = critic_response.score
@@ -929,19 +1013,37 @@ class ZorkOrchestrator:
 
                     # Only get a new action if we haven't exhausted attempts
                     if rejection_attempt < max_rejections - 1:
-                        # Get new action from agent with reasoning
-                        rejected_actions_context = ", ".join(
-                            self.critic.rejection_system.rejected_actions_this_turn
-                        )
-                        agent_response = self.agent.get_action_with_reasoning(
-                            game_state_text=current_game_state
-                            + f"\n\n[Previous action(s) '{rejected_actions_context}' were rejected by critic: {critic_justification}]",
-                            previous_actions_and_responses=self.action_history[-5:],
-                            action_counts=self.action_counts,
-                            relevant_memories=relevant_memories,
-                        )
-                        agent_action = agent_response["action"]
-                        agent_reasoning = agent_response["reasoning"]
+                        # After 2 failed attempts, use fallback action
+                        if rejection_attempt >= 1:
+                            self.logger.info(
+                                "Using fallback action generator after repeated rejections",
+                                extra={
+                                    "event_type": "fallback_action_triggered", 
+                                    "episode_id": self.episode_id,
+                                    "turn": self.turn_count,
+                                    "rejected_actions": self.critic.rejection_system.rejected_actions_this_turn,
+                                }
+                            )
+                            agent_action = self._get_fallback_action(
+                                self.critic.rejection_system.rejected_actions_this_turn + 
+                                [act for act, _ in self.action_history[-5:]]
+                            )
+                            agent_reasoning = "Using fallback action due to repeated rejections"
+                            # Skip getting new action from agent, go straight to re-evaluation
+                        else:
+                            # First rejection - let agent try again
+                            agent_response = self.agent.get_action_with_reasoning(
+                                game_state_text=self._build_agent_context(
+                                    current_game_state,
+                                    rejected_actions=self.critic.rejection_system.rejected_actions_this_turn,
+                                    critic_justification=critic_justification
+                                ),
+                                previous_actions_and_responses=self.action_history[-5:],
+                                action_counts=self.action_counts,
+                                relevant_memories=relevant_memories,
+                            )
+                            agent_action = agent_response["action"]
+                            agent_reasoning = agent_response["reasoning"]
 
                         # Re-evaluate new action
                         critic_response = self.critic.get_robust_evaluation(
@@ -952,6 +1054,7 @@ class ZorkOrchestrator:
                             previous_actions_and_responses=self.action_history[-3:],
                             current_location_name=self.current_room_name_for_map,
                             failed_actions_by_location=self.failed_actions_by_location,
+                            current_inventory=self.current_inventory,
                         )
                         critic_score_val = critic_response.score
                         critic_justification = critic_response.justification
@@ -1047,6 +1150,15 @@ class ZorkOrchestrator:
                     # Check if this is a death and track it
                     if self._is_death_reason(game_over_reason):
                         self.death_count += 1
+                        self.logger.info(
+                            f"Death detected! Total deaths across all episodes: {self.death_count}",
+                            extra={
+                                "event_type": "death_detected",
+                                "episode_id": self.episode_id,
+                                "turn": self.turn_count,
+                                "cumulative_death_count": self.death_count,
+                            }
+                        )
                     
                     # Set the game over flag for state export
                     self.game_over_flag = True
@@ -2137,6 +2249,7 @@ class ZorkOrchestrator:
                     "extractor": self.extractor.model,
                     "knowledge_base": self.adaptive_knowledge_manager.analysis_model if self.adaptive_knowledge_manager else "Not available",
                 },
+                "current_model_display": get_config().llm.current_model_display,
             },
             "current_state": {
                 "location": actual_current_room,  # Use the matched room key
@@ -2488,8 +2601,9 @@ class ZorkOrchestrator:
             # Reset memory log to summary + critical recent memories
             self.memory_log_history = [condensed_memory] + recent_critical_memories
             
-            # Reset action reasoning history but preserve recent critic scores
-            recent_reasoning = self.action_reasoning_history[-10:] if len(self.action_reasoning_history) > 10 else self.action_reasoning_history
+            # Reset action reasoning history but preserve recent critic scores  
+            # Keep 25 entries to ensure full export coverage (get_recent_log exports 20 by default)
+            recent_reasoning = self.action_reasoning_history[-25:] if len(self.action_reasoning_history) > 25 else self.action_reasoning_history
             self.action_reasoning_history = recent_reasoning
             
             self.last_summarization_turn = self.turn_count
@@ -2561,7 +2675,7 @@ Format as a clear, structured summary that preserves essential information for c
                 **self.adaptive_knowledge_manager.analysis_sampling.model_dump(exclude_unset=True)
             )
             
-            return response.choices[0].message.content.strip() if response.choices else ""
+            return response.content.strip() if response else ""
             
         except Exception as e:
             self.logger.error(f"Failed to generate LLM summary, using fallback: {e}", extra={"episode_id": self.episode_id})
@@ -2810,7 +2924,7 @@ Focus on objectives the agent has actually discovered through gameplay patterns 
             if hasattr(self.adaptive_knowledge_manager, 'client') and self.adaptive_knowledge_manager.client:
                 messages = [{"role": "user", "content": prompt}]
                 
-                model_to_use = self.adaptive_knowledge_manager.analysis_model if self.adaptive_knowledge_manager else "gpt-4"
+                model_to_use = self.adaptive_knowledge_manager.analysis_model if self.adaptive_knowledge_manager else self.agent.model
                 print(f"  🔍 Using model: {model_to_use}")
                 print(f"  🔍 Prompt length: {len(prompt)} characters")
                 print(f"  🔍 First 200 chars of prompt: {prompt[:200]}...")
@@ -2838,8 +2952,8 @@ Focus on objectives the agent has actually discovered through gameplay patterns 
                     
                     print(f"  🔍 LLM call successful, response type: {type(response)}")
                     
-                    # Extract content from OpenAI response structure
-                    response_content = response.choices[0].message.content if response.choices else ""
+                    # Extract content from LLM response
+                    response_content = response.content if response else ""
                     
                     print(f"  🔍 Response content type: {type(response_content)}")
                     print(f"  🔍 Response content length: {len(response_content) if response_content else 0}")
@@ -3130,13 +3244,13 @@ Only mark objectives as completed if you're confident they were achieved."""
                 messages = [{"role": "user", "content": prompt}]
                 
                 response = self.adaptive_knowledge_manager.client.chat.completions.create(
-                    model=self.adaptive_knowledge_manager.analysis_model if self.adaptive_knowledge_manager else "gpt-4",
+                    model=self.adaptive_knowledge_manager.analysis_model if self.adaptive_knowledge_manager else self.agent.model,
                     messages=messages,
                     **self.adaptive_knowledge_manager.analysis_sampling.model_dump(exclude_unset=True) if self.adaptive_knowledge_manager else {"temperature": 0.2, "max_tokens": 5000}
                 )
                 
                 # Parse completed objectives
-                completed_objectives = self._parse_completed_objectives(response.choices[0].message.content if response.choices else "")
+                completed_objectives = self._parse_completed_objectives(response.content if response else "")
                 
                 if completed_objectives:
                     self._mark_objectives_complete(completed_objectives, action_taken, completion_signals)
@@ -3232,7 +3346,7 @@ Only mark objectives as completed if you're confident they were achieved."""
             
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(f"=== OBJECTIVE GENERATION PROMPT (Turn: {self.turn_count}, Episode: {self.episode_id}) ===\\n")
-                model_to_use = self.adaptive_knowledge_manager.analysis_model if self.adaptive_knowledge_manager else "gpt-4" # Fallback for safety
+                model_to_use = self.adaptive_knowledge_manager.analysis_model if self.adaptive_knowledge_manager else self.agent.model # Fallback for safety
                 f.write(f"Model: {model_to_use}\\n")
                 # Assuming sampling params are accessible or hardcoded for this debug log
                 f.write(f"Temperature: 0.3 (default for objective update)\\n") 
@@ -3356,7 +3470,7 @@ Please provide a refined list of objectives that encourages exploration and prog
                 messages = [{"role": "user", "content": refined_objectives_prompt}]
                 # Use analysis_model and sampling parameters similar to knowledge generation
                 # Fallback to a default model if not configured
-                model_to_use = self.adaptive_knowledge_manager.analysis_model if self.adaptive_knowledge_manager and self.adaptive_knowledge_manager.analysis_model else "gpt-4-turbo" 
+                model_to_use = self.adaptive_knowledge_manager.analysis_model if self.adaptive_knowledge_manager and self.adaptive_knowledge_manager.analysis_model else self.agent.model
                 sampling_params = self.adaptive_knowledge_manager.analysis_sampling.model_dump(exclude_unset=True) if self.adaptive_knowledge_manager else {"temperature": 0.5, "max_tokens": 5000}
 
 
@@ -3366,7 +3480,7 @@ Please provide a refined list of objectives that encourages exploration and prog
                     **sampling_params
                 )
 
-                response_content = response.choices[0].message.content if response.choices else ""
+                response_content = response.content if response else ""
                 refined_objectives = self._parse_objectives_from_response(response_content)
 
                 if refined_objectives:

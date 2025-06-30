@@ -346,6 +346,96 @@ class LLMClient:
         # If we get here, all retries were exhausted
         raise Exception(f"LLM API request failed after {self.retry_config.max_retries + 1} attempts. Last error: {last_exception}")
 
+    def _extract_content_from_response(self, response_data: Dict[str, Any], model: str) -> str:
+        """
+        Extract content from response data, handling different provider formats.
+        
+        Args:
+            response_data: Raw JSON response from the API
+            model: Model name to help identify provider
+            
+        Returns:
+            Extracted content string
+            
+        Raises:
+            ValueError: If content cannot be extracted from the response
+        """
+        # Try OpenAI/OpenAI-compatible format first (most common)
+        if "choices" in response_data and len(response_data["choices"]) > 0:
+            choice = response_data["choices"][0]
+            if "message" in choice and "content" in choice["message"]:
+                return choice["message"]["content"]
+            # Some providers put content directly in choice
+            if "content" in choice:
+                return choice["content"]
+            # Some providers use "text" field
+            if "text" in choice:
+                return choice["text"]
+        
+        # Try Google Gemini format
+        if "candidates" in response_data and len(response_data["candidates"]) > 0:
+            candidate = response_data["candidates"][0]
+            if "content" in candidate:
+                if "parts" in candidate["content"] and len(candidate["content"]["parts"]) > 0:
+                    return candidate["content"]["parts"][0].get("text", "")
+                if "text" in candidate["content"]:
+                    return candidate["content"]["text"]
+            if "text" in candidate:
+                return candidate["text"]
+        
+        # Try Anthropic Claude format
+        if "content" in response_data:
+            if isinstance(response_data["content"], list) and len(response_data["content"]) > 0:
+                if "text" in response_data["content"][0]:
+                    return response_data["content"][0]["text"]
+            if isinstance(response_data["content"], str):
+                return response_data["content"]
+        
+        # Try direct content/text field (some simple APIs)
+        if "text" in response_data:
+            return response_data["text"]
+        if "content" in response_data and isinstance(response_data["content"], str):
+            return response_data["content"]
+        
+        # Try response field (some APIs)
+        if "response" in response_data:
+            if isinstance(response_data["response"], str):
+                return response_data["response"]
+            if isinstance(response_data["response"], dict) and "text" in response_data["response"]:
+                return response_data["response"]["text"]
+        
+        # Try generation field (some APIs)
+        if "generation" in response_data:
+            if isinstance(response_data["generation"], str):
+                return response_data["generation"]
+            if isinstance(response_data["generation"], dict) and "text" in response_data["generation"]:
+                return response_data["generation"]["text"]
+        
+        # Try results array format
+        if "results" in response_data and len(response_data["results"]) > 0:
+            result = response_data["results"][0]
+            if "text" in result:
+                return result["text"]
+            if "content" in result:
+                return result["content"]
+        
+        # Last resort: try to find any text-like field
+        possible_fields = ["output", "generated_text", "completion", "message", "answer"]
+        for field in possible_fields:
+            if field in response_data:
+                if isinstance(response_data[field], str):
+                    return response_data[field]
+                if isinstance(response_data[field], dict) and "text" in response_data[field]:
+                    return response_data[field]["text"]
+        
+        # If we can't find content, provide detailed error
+        available_keys = list(response_data.keys())
+        raise ValueError(
+            f"Unable to extract content from {model} response. "
+            f"Available keys: {available_keys}. "
+            f"Response structure: {json.dumps(response_data, indent=2)[:500]}..."
+        )
+
     def _make_request(
         self,
         model: str,
@@ -415,8 +505,28 @@ class LLMClient:
             payload["stop"] = stop
             
         if response_format is not None:
+            # Only include response_format for compatible models
             if not is_reasoning_model:  # o1/o3 models don't support response_format
-                payload["response_format"] = response_format
+                # Check if model supports structured output (OpenAI and compatible models)
+                is_openai_model = any(provider in model.lower() for provider in ["gpt-", "o1-", "o3-", "openai/", "qwen"])
+                is_openai_endpoint = "openai.com" in self.base_url or "api.openai.com" in self.base_url
+                
+                if is_openai_model or is_openai_endpoint:
+                    payload["response_format"] = response_format
+                else:
+                    # Log that structured output is being skipped
+                    if self.logger:
+                        self.logger.info(
+                            f"Skipping structured output for non-OpenAI model: {model}",
+                            extra={
+                                "extras": {
+                                    "event_type": "structured_output_skipped",
+                                    "model": model,
+                                    "base_url": self.base_url,
+                                    "response_format": str(response_format),
+                                }
+                            }
+                        )
         
         # Add any additional kwargs
         payload.update(kwargs)
@@ -435,16 +545,76 @@ class LLMClient:
                 if retryable_error:
                     raise retryable_error
                 else:
-                    # Non-retryable error
-                    raise Exception(f"HTTP {response.status_code}: {response.text}")
+                    # Non-retryable error - log the full response for debugging
+                    error_msg = f"HTTP {response.status_code}: {response.text}"
+                    if self.logger:
+                        self.logger.error(
+                            f"LLM API request failed: {error_msg}",
+                            extra={
+                                "extras": {
+                                    "event_type": "llm_request_failed",
+                                    "status_code": response.status_code,
+                                    "response_text": response.text,
+                                    "model": model,
+                                    "base_url": self.base_url,
+                                }
+                            }
+                        )
+                    raise Exception(error_msg)
             
             response_data = response.json()
             
-            # Extract content from response
-            if "choices" in response_data and len(response_data["choices"]) > 0:
-                content = response_data["choices"][0]["message"]["content"]
-            else:
-                raise ValueError("No valid choices in response")
+            # Enhanced debugging for empty responses
+            if self.logger:
+                self.logger.debug(
+                    f"LLM API response received for model {model}",
+                    extra={
+                        "extras": {
+                            "event_type": "llm_response_debug",
+                            "model": model,
+                            "response_keys": list(response_data.keys()),
+                            "response_size": len(str(response_data)),
+                            "has_choices": "choices" in response_data,
+                            "has_candidates": "candidates" in response_data,
+                            "full_response": response_data if len(str(response_data)) < 1000 else str(response_data)[:1000] + "...",
+                        }
+                    }
+                )
+            
+            # Extract content using the standardized parser
+            content = self._extract_content_from_response(response_data, model)
+            
+            # Clean up whitespace and handle empty content
+            if content:
+                content = content.strip()
+                if not content:  # Content was only whitespace
+                    if self.logger:
+                        self.logger.warning(
+                            f"LLM returned only whitespace for model {model}",
+                            extra={
+                                "extras": {
+                                    "event_type": "llm_whitespace_only_response",
+                                    "model": model,
+                                    "raw_response": repr(content),  # Show actual characters
+                                }
+                            }
+                        )
+                    content = ""  # Normalize to empty string
+            
+            # Check for empty content and log detailed info
+            if not content:
+                if self.logger:
+                    self.logger.error(
+                        f"LLM returned empty content for model {model}",
+                        extra={
+                            "extras": {
+                                "event_type": "llm_empty_content",
+                                "model": model,
+                                "response_data": response_data,
+                                "base_url": self.base_url,
+                            }
+                        }
+                    )
             
             # Extract usage information if available
             usage = response_data.get("usage")

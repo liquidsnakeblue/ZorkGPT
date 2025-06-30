@@ -102,13 +102,15 @@ class ActionRejectionSystem:
             return self._check_other_override_conditions(action, context)
             
         # 3. Immediate action repetition (high priority detection)
-        if len(recent_actions) >= 3:
-            if len(set(recent_actions[-3:])) == 1:
+        # RELAXED: Changed from 3 to 5 - allow more repetitions before triggering
+        if len(recent_actions) >= 5:
+            if len(set(recent_actions[-5:])) == 1:
                 return True, "immediate_repetition_detected"
         
         # 4. Enhanced location-based loop detection
-        unique_recent_locations = list(set(recent_locations[-6:]))
-        if len(unique_recent_locations) <= 2:
+        # RELAXED: Changed from 6 to 8 locations and from <=2 to <=1 unique locations
+        unique_recent_locations = list(set(recent_locations[-8:]))
+        if len(unique_recent_locations) <= 1:
             
             # 4a. Calculate action diversity in recent location stays
             recent_location_actions = recent_actions[-6:] if len(recent_actions) >= 6 else recent_actions
@@ -121,16 +123,17 @@ class ActionRejectionSystem:
             location_context = self._analyze_location_type(current_location)
             
             # 4d. Decision matrix for location-based scenarios
-            if action_diversity < 0.3 and not is_making_progress:
+            # RELAXED: Made thresholds less aggressive
+            if action_diversity < 0.2 and not is_making_progress:  # Was 0.3
                 return True, "low_diversity_no_progress_loop"
-            elif action_diversity < 0.5 and not is_making_progress and turns_without_progress >= 4:
+            elif action_diversity < 0.3 and not is_making_progress and turns_without_progress >= 8:  # Was 0.5 and 4
                 # Broader threshold for low diversity + no progress with some movement stagnation
                 return True, "low_diversity_no_progress_loop"
-            elif location_context == "simple" and len(recent_location_actions) > 4:
+            elif location_context == "simple" and len(recent_location_actions) > 8:  # Was 4
                 return True, "over_exploring_simple_location"
-            elif not is_making_progress and turns_without_progress > 10:
+            elif not is_making_progress and turns_without_progress > 15:  # Was 10
                 return True, "extended_stagnation_detected"
-            elif action_diversity < 0.4 and turns_without_progress > 6:
+            elif action_diversity < 0.3 and turns_without_progress > 10:  # Was 0.4 and 6
                 return True, "repetitive_actions_no_movement"
             
             # 4e. If we're in a single location with good diversity and progress, allow continued exploration
@@ -139,8 +142,9 @@ class ActionRejectionSystem:
                 return False, None  # Explicitly allow productive single-location exploration
         
         # 5. Action cycling detection (bouncing between small set of actions)
-        if len(recent_actions) >= 8:
-            cycling_detected = self._detect_action_cycling(recent_actions[-8:])
+        # RELAXED: Changed from 8 to 10 actions
+        if len(recent_actions) >= 10:
+            cycling_detected = self._detect_action_cycling(recent_actions[-10:])
             if cycling_detected:
                 return True, "action_cycling_detected"
         
@@ -271,20 +275,23 @@ class ActionRejectionSystem:
         Returns:
             bool: True if cycling detected, False otherwise
         """
-        if len(recent_actions) < 6:
+        # RELAXED: Changed from 6 to 8 minimum actions
+        if len(recent_actions) < 8:
             return False
             
         # Check for alternating patterns (like A-B-A-B-A-B)
         unique_actions = list(set(recent_actions))
         
-        # Cycling: using only 2-3 unique actions across 6+ turns
-        if len(unique_actions) <= 3 and len(recent_actions) >= 6:
+        # Cycling: using only 2-3 unique actions across 8+ turns
+        # RELAXED: Changed from <=3 to <=2 unique actions
+        if len(unique_actions) <= 2 and len(recent_actions) >= 8:
             # Verify this is actually repetitive (not just similar actions with variety)
             action_counts = {action: recent_actions.count(action) for action in unique_actions}
             max_count = max(action_counts.values())
             
             # If any action appears more than half the time, it's likely cycling
-            if max_count > len(recent_actions) * 0.4:
+            # RELAXED: Changed from 0.4 to 0.6 (60% threshold)
+            if max_count > len(recent_actions) * 0.6:
                 return True
                 
         return False
@@ -464,6 +471,7 @@ class ZorkCritic:
         previous_actions_and_responses: Optional[List[Tuple[str, str]]] = None,
         current_location_name: Optional[str] = None,
         failed_actions_by_location: Optional[Dict[str, set]] = None,
+        current_inventory: Optional[List[str]] = None,
     ) -> CriticResponse:
         """
         Get an evaluation from the Critic LM.
@@ -476,6 +484,7 @@ class ZorkCritic:
             previous_actions_and_responses: Recent action history
             current_location_name: Name of the current location
             failed_actions_by_location: Dict mapping location names to sets of failed actions
+            current_inventory: List of items currently in inventory
 
         Returns:
             CriticResponse with score and justification
@@ -522,14 +531,29 @@ class ZorkCritic:
         spatial_context = ""
         if available_exits:
             spatial_context = f"\nAvailable exits from current location: {', '.join(available_exits)}"
+        
+        # Add inventory context if available
+        inventory_context = ""
+        if current_inventory:
+            inventory_context = f"\nCurrent inventory: {', '.join(current_inventory)}"
+        elif current_inventory is not None:  # Empty list
+            inventory_context = "\nCurrent inventory: Empty"
 
         user_prompt = f"""Current Game State:
-{game_state_text}{spatial_context}
+{game_state_text}{spatial_context}{inventory_context}
 
-Proposed Agent Action:
-{proposed_action}{repetition_context}{recent_context}
+IMPORTANT: You must evaluate ONLY the following proposed action:
+Proposed Agent Action: {proposed_action}
 
-Evaluate this action based on your criteria. Respond with ONLY a JSON object in this exact format:
+DO NOT evaluate or reference any previous actions. Focus ONLY on whether the above proposed action "{proposed_action}" is valid and appropriate given the current game state.
+{repetition_context}
+
+Previous actions are shown below ONLY for context about what has already been tried. Do NOT evaluate these past actions:
+{recent_context}
+
+Evaluate ONLY the proposed action "{proposed_action}" based on your criteria. Your justification must specifically address why "{proposed_action}" is good or bad, not any previous actions.
+
+Respond with ONLY a JSON object in this exact format:
 {{"score": 0.0, "justification": "Your justification here", "confidence": 0.8}}
 """
         messages = [
@@ -621,6 +645,7 @@ Evaluate this action based on your criteria. Respond with ONLY a JSON object in 
         previous_actions_and_responses: Optional[List[Tuple[str, str]]] = None,
         current_location_name: Optional[str] = None,
         failed_actions_by_location: Optional[Dict[str, set]] = None,
+        current_inventory: Optional[List[str]] = None,
         max_attempts: int = 3,
     ) -> CriticResponse:
         """
@@ -634,6 +659,7 @@ Evaluate this action based on your criteria. Respond with ONLY a JSON object in 
             previous_actions_and_responses: Recent action history
             current_location_name: Name of the current location
             failed_actions_by_location: Dict mapping location names to sets of failed actions
+            current_inventory: List of items currently in inventory
             max_attempts: Maximum number of evaluation attempts for consensus
 
         Returns:
@@ -650,6 +676,7 @@ Evaluate this action based on your criteria. Respond with ONLY a JSON object in 
                 previous_actions_and_responses,
                 current_location_name,
                 failed_actions_by_location,
+                current_inventory,
             )
             evaluations.append(evaluation)
 
@@ -761,6 +788,7 @@ Respond with ONLY a JSON object in this exact format:
 """
 
         messages = [
+            {"role": "system", "content": "You are a game action analyzer for text adventure games. Provide accurate JSON responses about action success/failure."},
             {"role": "user", "content": user_prompt}
         ]
 
@@ -768,8 +796,11 @@ Respond with ONLY a JSON object in this exact format:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.1,  # Low temperature for consistent analysis
-                max_tokens=100,
+                temperature=self.temperature,     # Use same config as main critic
+                max_tokens=self.max_tokens,       # Use same config as main critic
+                top_p=self.top_p,
+                top_k=self.top_k,
+                min_p=self.min_p,
                 response_format=create_json_schema(FailureDetectionResponse),
             )
 

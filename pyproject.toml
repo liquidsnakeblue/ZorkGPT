@@ -26,13 +26,13 @@ dev = [
 
 [tool.zorkgpt.llm]
 # LLM Configuration
-client_base_url = "http://192.168.4.245:30001/v1"
-agent_model = "Llama-3.3-70B-Instruct-exl2_4.0bpw"
-info_ext_model = "Llama-3.3-70B-Instruct-exl2_4.0bpw"
-# info_ext_model = "Llama-3.3-70B-Instruct-exl2_4.0bpw"
-critic_model = "Llama-3.3-70B-Instruct-exl2_4.0bpw"
-# critic_model = "Llama-3.3-70B-Instruct-exl2_4.0bpw"
-analysis_model = "Llama-3.3-70B-Instruct-exl2_4.0bpw"
+client_base_url = "http://schuyler.ai:30000/v1"
+agent_model = "qwen3-32b"
+info_ext_model = "qwen3-32b"
+critic_model = "qwen3-32b"
+analysis_model = "qwen3-32b"
+# Display name for current model (shown in GUI)
+current_model_display = "qwen3:32b-q8_0"
 
 # Per-model base URLs (optional, for cost optimization)
 # If not specified, will fall back to client_base_url
@@ -69,40 +69,40 @@ min_p = 0.0
 
 [tool.zorkgpt.critic_sampling]
 # Critic LLM Sampling Parameters
-temperature = 0.2
-max_tokens = 100
-# top_p = null     # Optional - leave commented for default
-# top_k = null     # Optional - leave commented for default
-# min_p = null     # Optional - leave commented for default
+temperature = 0.6
+# max_tokens = null  # Removed limit to allow complete responses
+top_p = 0.95
+# top_k = 20  # Disabled - can cause issues with Gemini
+min_p = 0.0
 
 [tool.zorkgpt.extractor_sampling]
 # Information Extractor LLM Sampling Parameters
-temperature = 0.1
-max_tokens = 400
-# top_p = null     # Optional - leave commented for default
-# top_k = null     # Optional - leave commented for default
-# min_p = null     # Optional - leave commented for default
+temperature = 0.6
+# max_tokens = null  # Removed limit to allow complete responses
+top_p = 0.95
+# top_k = 20  # Disabled - can cause issues with Gemini
+min_p = 0.0
 
 [tool.zorkgpt.analysis_sampling]
 # Analysis Model LLM Sampling Parameters (for knowledge generation)
-temperature = 0.3
-top_p = 0.8     # Optional - leave commented for default
-top_k = 20     # Optional - leave commented for default
-min_p = 0.0     # Optional - leave commented for default
-max_tokens = 5000  # Optional - leave commented to use default
+temperature = 0.6
+top_p = 0.95
+top_k = 20
+min_p = 0.0
+# max_tokens = null  # Removed limit to allow complete responses
 
 [tool.zorkgpt.gameplay]
 # Gameplay Configuration
-turn_delay_seconds = 30.0
+turn_delay_seconds = 15.0
 turn_window_size = 100
 min_knowledge_quality = 6.0
-critic_rejection_threshold = -0.2  # More permissive from -0.05 to allow more experimentation
+critic_rejection_threshold = -0.3  # More permissive from -0.05 to allow more experimentation
 # Exit pruning configuration
 enable_exit_pruning = true
 exit_failure_threshold = 2  # Reduced from 3 to more quickly abandon failed directions
 # Knowledge base condensation configuration  
 enable_knowledge_condensation = true
-knowledge_condensation_threshold = 15000  # Characters before triggering condensation
+knowledge_condensation_threshold = 10000  # Characters before triggering condensation
 # Save/restore configuration
 zork_save_filename_template = "zorkgpt_save_{timestamp}"
 zork_game_workdir = "game_files"
@@ -115,17 +115,17 @@ enable_prompt_logging = false
 [tool.zorkgpt.orchestrator]
 # Orchestrator Configuration
 max_turns_per_episode = 5000
-knowledge_update_interval = 100
+knowledge_update_interval = 50
 map_update_interval = 10
-objective_update_interval = 25
+objective_update_interval = 15
 enable_state_export = true
-max_context_tokens = 40000
+max_context_tokens = 15000
 context_overflow_threshold = 0.6
 
 enable_objective_refinement = true
-objective_refinement_interval = 50
-max_objectives_before_forced_refinement = 15
-refined_objectives_target_count = 8
+objective_refinement_interval = 20
+max_objectives_before_forced_refinement = 10
+refined_objectives_target_count = 5
 
 # Inter-episode synthesis configuration
 enable_inter_episode_synthesis = true

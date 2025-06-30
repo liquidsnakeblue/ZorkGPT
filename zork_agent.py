@@ -228,7 +228,7 @@ The following strategic guide has been compiled from analyzing previous episodes
                 messages=messages,
                 **self.sampling_params.model_dump(exclude_unset=True),
             )
-            action_response = llm_response.choices[0].message.content
+            action_response = llm_response.content
 
             # Log the response for debugging
             self.logger.info(
@@ -366,7 +366,7 @@ The following strategic guide has been compiled from analyzing previous episodes
             # DEBUG: Log the raw response to understand what the model is actually returning
             if self.logger:
                 self.logger.info(
-                    f"[DEBUG] Raw agent response:",
+                    f"[DEBUG] Raw agent response: {raw_response}",
                     extra={
                         "event_type": "agent_raw_response_debug",
                         "episode_id": self.episode_id,
@@ -400,7 +400,7 @@ The following strategic guide has been compiled from analyzing previous episodes
             # DEBUG: Log what reasoning parts were extracted
             if self.logger:
                 self.logger.info(
-                    f"[DEBUG] Reasoning extraction results:",
+                    f"[DEBUG] Reasoning extraction results: think={len(think_matches)}, thinking={len(thinking_matches)}, reflection={len(reflection_matches)}, total={len(reasoning_parts)}",
                     extra={
                         "event_type": "reasoning_extraction_debug",
                         "episode_id": self.episode_id,
@@ -440,7 +440,7 @@ The following strategic guide has been compiled from analyzing previous episodes
                 # DEBUG: Log fallback reasoning extraction
                 if self.logger:
                     self.logger.info(
-                        f"[DEBUG] Fallback reasoning extraction:",
+                        f"[DEBUG] Fallback reasoning extraction: found {len(potential_reasoning)} lines",
                         extra={
                             "event_type": "fallback_reasoning_debug",
                             "episode_id": self.episode_id,
@@ -457,7 +457,7 @@ The following strategic guide has been compiled from analyzing previous episodes
             # DEBUG: Log final reasoning result
             if self.logger:
                 self.logger.info(
-                    f"[DEBUG] Final reasoning result:",
+                    f"[DEBUG] Final reasoning result: {reasoning}" if reasoning else "[DEBUG] Final reasoning result: (empty)",
                     extra={
                         "event_type": "final_reasoning_debug",
                         "episode_id": self.episode_id,
@@ -541,14 +541,15 @@ The following strategic guide has been compiled from analyzing previous episodes
         # Check for loop situation - if agent has been in same location for multiple recent turns
         recent_locations = []
         if memory_log_history and len(memory_log_history) >= 3:
-            # Check last 5 turns for same location
-            for obs in memory_log_history[-5:]:
+            # Check last 8 turns for same location (RELAXED from 5)
+            for obs in memory_log_history[-8:]:
                 if obs.current_location_name:
                     recent_locations.append(obs.current_location_name)
         
         # Count how many of the recent turns were in current location
         current_location_count = recent_locations.count(current_location_name_from_current_extraction)
-        is_stuck_in_loop = current_location_count >= 3
+        # RELAXED: Changed from 3 to 6 - now requires 6 out of 8 turns in same location
+        is_stuck_in_loop = current_location_count >= 6
         
         map_context_str = ""
         if game_map:
@@ -583,7 +584,7 @@ The following strategic guide has been compiled from analyzing previous episodes
         # Add loop detection warning at the top of other memories
         if is_stuck_in_loop:
             other_memory_strings.append(
-                f"🔄 CRITICAL LOOP WARNING: You have been in '{current_location_name_from_current_extraction}' for {current_location_count} of your last 5 turns! STOP object interactions and try MOVEMENT commands immediately. Check the Available exits above and use basic directional commands like 'north', 'south', 'east', 'west'."
+                f"🔄 CRITICAL LOOP WARNING: You have been in '{current_location_name_from_current_extraction}' for {current_location_count} of your last 8 turns! STOP object interactions and try MOVEMENT commands immediately. Check the Available exits above and use basic directional commands like 'north', 'south', 'east', 'west'."
             )
 
         # Add combat status information
@@ -677,6 +678,27 @@ The following strategic guide has been compiled from analyzing previous episodes
         if not final_output_parts:
             return ""
         return "\n".join(final_output_parts) + "\n"
+
+    @property
+    def sampling_params(self):
+        """Get sampling parameters as a Pydantic-compatible object."""
+        from pydantic import BaseModel
+        from typing import Optional
+        
+        class SamplingParams(BaseModel):
+            temperature: float
+            top_p: float
+            top_k: int
+            min_p: float
+            max_tokens: Optional[int]
+            
+        return SamplingParams(
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            min_p=self.min_p,
+            max_tokens=self.max_tokens
+        )
 
     def update_episode_id(self, episode_id: str) -> None:
         """Update the episode ID for logging purposes."""

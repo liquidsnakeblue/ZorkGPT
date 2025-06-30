@@ -76,7 +76,7 @@ class HumanReadableFormatter(logging.Formatter):
 
 
 def setup_logging(
-    episode_log_file: str, json_log_file: str, log_level: int = logging.INFO
+    episode_log_file: str, json_log_file: str, log_level: int = None
 ):
     """
     Set up logging with console and file handlers.
@@ -84,8 +84,15 @@ def setup_logging(
     Args:
         episode_log_file: Path to the human-readable log file
         json_log_file: Path to the JSON log file
-        log_level: Logging level (default: INFO)
+        log_level: Logging level (default: INFO, or DEBUG if ZORK_DEBUG env var is set)
     """
+    # Check environment variable for debug mode
+    if log_level is None:
+        if os.environ.get("ZORK_DEBUG", "").lower() in ["true", "1", "yes", "debug"]:
+            log_level = logging.DEBUG
+            print("🐛 DEBUG logging enabled via ZORK_DEBUG environment variable")
+        else:
+            log_level = logging.INFO
     # Create logger
     logger = logging.getLogger("zorkgpt")
     logger.setLevel(log_level)

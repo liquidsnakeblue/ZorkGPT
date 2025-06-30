@@ -305,9 +305,12 @@ Extract key information from the game text and return it as JSON with these fiel
             
             movement_response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": analysis_prompt}],
+                messages=[
+                    {"role": "system", "content": "You are a game state analyzer for text adventure games. Provide accurate JSON responses."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
                 temperature=0.1,  # Low temperature for consistent analysis
-                max_tokens=200,
+                max_tokens=1200,  # Increased further for complete JSON responses with reasoning
             )
             
             if not movement_response:

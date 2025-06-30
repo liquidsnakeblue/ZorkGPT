@@ -5,10 +5,8 @@ from zork_orchestrator import ZorkOrchestrator
 import time
 
 
-def run_episode():
+def run_episode(orchestrator):
     """Run a long episode with adaptive knowledge management."""
-
-    orchestrator = ZorkOrchestrator()
 
     print("Starting long episode with adaptive knowledge management...")
     print(f"Configuration:")
@@ -34,6 +32,7 @@ def run_episode():
             print(f"\nEpisode Complete!")
             print(f"  - Final score: {final_score}")
             print(f"  - Turns played: {orchestrator.turn_count}")
+            print(f"  - Total deaths (all episodes): {orchestrator.death_count}")
 
             # Calculate knowledge updates more accurately
             regular_updates = (
@@ -78,9 +77,12 @@ def run_episode():
 
 if __name__ == "__main__":
     print("=" * 60)
+    # Create orchestrator once, outside the episode loop
+    orchestrator = ZorkOrchestrator()
+    
     while True:
         try:
-            run_episode()
+            run_episode(orchestrator)
         except Exception as e:
             print(f"Error: {e}")
             import traceback
